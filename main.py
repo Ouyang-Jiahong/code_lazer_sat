@@ -27,6 +27,8 @@ start_time = Time("2021-10-14T04:00:00", format='isot', scale='utc')
 
 # 构建观测可见性字典：键为(测站编号, 目标编号)，值为该组合下所有可见时间窗口及其时长
 radar_target_vis_dict = {}
+
+# 遍历所有可用观测弧段数据
 for i in range(len(usable_arcs[0])):
     sat_id = usable_arcs[0][i][0][0][0]  # 目标编号
     radar_id = usable_arcs[0][i][1][0][0]  # 测站编号
@@ -58,57 +60,90 @@ for i in range(len(usable_arcs[0])):
 
 print("加载数据完成！")
 
-## 构建模型
+# 构建模型
 print("模型构建中...")
 prob = pulp.LpProblem("Observation_Planning", pulp.LpMaximize)
 
-# 决策变量
-x = [[pulp.LpVariable(f"x_{r}_{t}", cat="Binary") for t in range(num_targets)] for r in range(num_radars)]
-y = [[
-    [pulp.LpVariable(f"y_{r}_{t}_{a}", cat="Binary") for a in range(len(radar_target_vis_dict.get((r, t), [])))]
-    for t in range(num_targets)] for r in range(num_radars)]
+# 定义索引集合
+radar_ids = sensor_data.index.tolist()
+target_ids = require_data.index.tolist()
 
-# 松弛变量（软约束处理）
-slack_arc = [pulp.LpVariable(f"slack_arc_{t}", lowBound=0) for t in range(num_targets)]
-slack_time = [pulp.LpVariable(f"slack_time_{t}", lowBound=0) for t in range(num_targets)]
+# 定义主决策变量：x[r,s,a]，表示雷达r是否在弧段a上对目标s进行观测
+x = {}
+arc_index = {}  # 存储(r,s)下的弧段编号列表
+arc_duration = {}  # 存储每个(r,s,a)对应的观测时长
 
-# 目标函数：最大化优先级 - 惩罚项
-penalty_time = 100
-penalty_arc = 50
-prob += (
-    pulp.lpSum(priority_weights[t] * x[r][t] for r in range(num_radars) for t in range(num_targets))
-    - pulp.lpSum([penalty_time * slack_time[t] + penalty_arc * slack_arc[t] for t in range(num_targets)])
-)
+for (r, s), vis_list in radar_target_vis_dict.items():
+    arc_index[(r, s)] = list(range(len(vis_list)))
+    for a, (start, end, duration) in enumerate(vis_list):
+        x[(r, s, a)] = pulp.LpVariable(f"x_{r}_{s}_{a}", cat="Binary")
+        arc_duration[(r, s, a)] = duration
 
-# 约束1：目标的测站数要求
-for t in range(num_targets):
-    prob += pulp.lpSum([x[r][t] for r in range(num_radars)]) >= required_stations[t]
+# 定义辅助变量：y[s]，表示目标s是否满足任务要求
+y = {s: pulp.LpVariable(f"y_{s}", cat="Binary") for s in target_ids}
 
-# 约束2：观测时间 + 松弛
-for t in range(num_targets):
-    total_time = []
-    for r in range(num_radars):
-        visibles = radar_target_vis_dict.get((r, t), [])
-        total_time.append(pulp.lpSum([y[r][t][a] * visibles[a][2] / 60 for a in range(len(visibles))]))
-    prob += pulp.lpSum(total_time) + slack_time[t] >= required_observation_time[t]
+# 定义辅助变量：δ[r,s]，表示雷达r是否对目标s形成有效观测
+delta = {}
+for (r, s) in arc_index:
+    delta[(r, s)] = pulp.LpVariable(f"delta_{r}_{s}", cat="Binary")
 
-# 约束3：弧段数量 + 松弛
-for t in range(num_targets):
-    total_arcs = []
-    for r in range(num_radars):
-        total_arcs.append(pulp.lpSum([y[r][t][a] for a in range(len(y[r][t]))]))
-    prob += pulp.lpSum(total_arcs) + slack_arc[t] >= required_arc_count[t]
+# 定义辅助变量：z[s,a]，目标s在弧段a上是否至少被某雷达有效观测
+z = {}
+arc_map = {}  # s -> 所有可观测弧段（全局编号）
+for s in target_ids:
+    z[s] = {}
+    arc_map[s] = set()
+    for (r_, s_), arcs in arc_index.items():
+        if s_ == s:
+            for a in arcs:
+                z[s][a] = pulp.LpVariable(f"z_{s}_{a}", cat="Binary")
+                arc_map[s].add((r_, a))
 
-# 约束4：雷达容量
-for r in range(num_radars):
-    prob += pulp.lpSum([x[r][t] for t in range(num_targets)]) <= radar_capacities[r]
+# 目标函数：最大化加权任务完成数
+prob += pulp.lpSum([priority_weights[s] * y[s] for s in target_ids])
 
-# 约束5：只有分配了雷达才能启用弧段
-for r in range(num_radars):
-    for t in range(num_targets):
-        for a in range(len(y[r][t])):
-            prob += y[r][t][a] <= x[r][t]
+# 约束1：测站数量约束
+for s in target_ids:
+    prob += pulp.lpSum([delta[(r, s)] for r in radar_ids if (r, s) in delta]) >= required_stations[s] * y[s]
 
-# 求解
-status = prob.solve(pulp.PULP_CBC_CMD(msg=True))
-print(f"求解状态: {pulp.LpStatus[status]}")
+    for r in radar_ids:
+        if (r, s) in arc_index:
+            total_time = pulp.lpSum([arc_duration[(r, s, a)] * x[(r, s, a)] for a in arc_index[(r, s)]])
+            prob += total_time >= required_observation_time[s] * delta[(r, s)]
+            prob += delta[(r, s)] <= pulp.lpSum([x[(r, s, a)] for a in arc_index[(r, s)]])
+
+# 约束2：有效弧段数量约束
+for s in target_ids:
+    prob += pulp.lpSum([z[s][a] for a in z[s]]) >= required_arc_count[s] * y[s]
+
+    for (r, a) in arc_map[s]:
+        if (r, s, a) in x:
+            prob += z[s][a] >= x[(r, s, a)]
+
+# 约束3：雷达容量约束（按时间离散化）
+time_steps = simDate.shape[1]  # 假设simDate列数为时间步长数量
+for r in radar_ids:
+    for t in range(time_steps):
+        # 某一时刻雷达r可用的观测项
+        relevant_xs = []
+        for (r_, s_), arcs in arc_index.items():
+            if r_ != r:
+                continue
+            for a in arcs:
+                s_time, e_time, _ = radar_target_vis_dict[(r, s_)][a]
+                if s_time <= start_time + t * u.min <= e_time:
+                    relevant_xs.append(x[(r, s_, a)])
+        if relevant_xs:
+            prob += pulp.lpSum(relevant_xs) <= radar_capacities[r]
+
+print("模型构建完成，开始求解...")
+print("变量数量：", len(prob.variables()))
+print("约束数量：", len(prob.constraints))
+prob.solve()
+
+# 输出结果
+print("求解状态：", pulp.LpStatus[prob.status])
+print("目标函数值：", pulp.value(prob.objective))
+for s in target_ids:
+    if pulp.value(y[s]) > 0.5:
+        print(f"目标 {s} 完成观测任务，权重 {priority_weights[s]}")
