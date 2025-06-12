@@ -117,12 +117,11 @@ try:
 
     # 构建每个雷达-卫星对的可见弧段列表
     radar_target_visibilities = []
-
-    for i in range(len(usable_arcs_data)):
-        sat_id = usable_arcs_data[i][0][0][0][0]  # 卫星索引
-        radar_id = usable_arcs_data[i][0][1][0][0]  # 雷达索引
-        arc_chain = usable_arcs_data[i][0][2] # 弧段时间范围（列索引）
-        arc_durations = usable_arcs_data[i][0][3]  # 每个弧段时长（秒）
+    for i in range(len(usable_arcs_data[0])):
+        sat_id = usable_arcs_data[0][i][0][0][0]  # 卫星索引
+        radar_id = usable_arcs_data[0][i][1][0][0]  # 雷达索引
+        arc_chain = usable_arcs_data[0][i][2] # 弧段时间范围（列索引）
+        arc_durations = usable_arcs_data[0][i][3]  # 每个弧段时长（秒）
 
         # 转换为起止时间戳（UTC 时间）
         visible_windows = []
@@ -158,8 +157,6 @@ else:
 x = pulp.LpVariable.dicts("RadarTargetAssignment", 
                           [(r, t) for r in range(num_radars) for t in range(num_targets)], 
                           cat='Binary')
-
-pprint.pprint(radar_target_visibilities)
 
 # y[r][t][a] 表示雷达r对目标t在第a个可见弧段是否执行探测
 y = pulp.LpVariable.dicts("ObservationArcSelection",
