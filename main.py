@@ -141,72 +141,69 @@ try:
 
             visible_windows.append((start_time_utc, end_time_utc, arc_durations[j, 0]))
 
-        radar_target_visibilities.append({
-            "radar_id": radar_id,
-            "sat_id": sat_id,
-            "visible_windows": visible_windows
-        })
+        radar_target_visibilities.append({"radar_id": radar_id, "sat_id": sat_id, "visible_windows": visible_windows})
+
+    radar_target_vis_dict = {}
+    for item in radar_target_visibilities:
+        key = (item["radar_id"], item["sat_id"])
+        radar_target_vis_dict[key] = item["visible_windows"]
 
 except Exception as e:
     print(f"加载可见弧段失败: {e}")
 else:
     print("可见弧段数据加载成功")
-    
-## 决策变量设置
-# 创建决策变量：x[r][t] 表示雷达r是否分配给目标t
-x = pulp.LpVariable.dicts("RadarTargetAssignment", 
-                          [(r, t) for r in range(num_radars) for t in range(num_targets)], 
-                          cat='Binary')
 
-# y[r][t][a] 表示雷达r对目标t在第a个可见弧段是否执行探测
-y = pulp.LpVariable.dicts("ObservationArcSelection",
-                          [(r, t, a) for r in range(num_radars) for t in range(num_targets)
-                           for a in range(len(radar_target_visibilities[(r * num_targets + t)]["visible_windows"]))],
-                          cat='Binary')
-
-## 目标函数设置
-# 目标函数：最大化被探测目标的总优先级权重
-prob += pulp.lpSum([
-    x[r][t] * require_data.loc[t, '优先级'] 
-    for r in range(num_radars) 
-    for t in range(num_targets)
-]), "Maximize_Total_Priority"
-
-## 约束条件设置
-# 1. 每个目标必须满足所需的最小探测次数和时间
-for t in range(num_targets):
-    required_obs_count = require_data.loc[t, '需要的弧段数量']
-    required_obs_time = require_data.loc[t, '需要的观测时间(min)'] * 60  # 转换为秒
-
-    prob += pulp.lpSum([
-        y[r][t][a] for r in range(num_radars)
-        for a in range(len(radar_target_visibilities[(r * num_targets + t)]["visible_windows"]))
-    ]) >= required_obs_count, f"Min_Observations_Target_{t}"
-
-    prob += pulp.lpSum([
-        y[r][t][a] * radar_target_visibilities[(r * num_targets + t)]["visible_windows"][a][2]
-        for r in range(num_radars)
-        for a in range(len(radar_target_visibilities[(r * num_targets + t)]["visible_windows"]))
-    ]) >= required_obs_time, f"Min_Observation_Time_Target_{t}"
-    
-# 2. 每个雷达最多探测其容量内的目标数
+x = [[pulp.LpVariable(f"x_{r}_{t}", cat="Binary") for t in range(num_targets)] for r in range(num_radars)]
+y = []
 for r in range(num_radars):
-    max_capacity = radar_capacities[r]
-    prob += pulp.lpSum([x[r][t] for t in range(num_targets)]) <= max_capacity, f"Radar_Capacity_{r}"
-    
-# 3. 若雷达未分配给某目标，则不能对该目标进行探测
-for r in range(num_radars):
+    y_radar = []
     for t in range(num_targets):
-        for a in range(len(radar_target_visibilities[(r * num_targets + t)]["visible_windows"])):
-            prob += y[r][t][a] <= x[r][t], f"No_Observation_Without_Assignment_{r}_{t}_{a}"
+        key = (r, t)
+        visibles = radar_target_vis_dict.get(key, [])
+        y_target = [pulp.LpVariable(f"y_{r}_{t}_{a}", cat="Binary") for a in range(len(visibles))]
+        y_radar.append(y_target)
+    y.append(y_radar)
 
-## 问题求解
-# 求解优化问题
+print("决策变量设置完成")
+
+print("目标函数设置开始...")
+priority_weights = require_data["优先级(数值越大，优先级越高)"].values
+prob += pulp.lpSum(priority_weights[t] * x[r][t] for r in range(num_radars) for t in range(num_targets))
+print("目标函数设置完成")
+
+print("约束条件设置开始...")
+required_stations = require_data["需要的测站数量"].values
+required_observation_time = require_data["需要的观测时间(min)"].values
+
+for t in range(num_targets):
+    prob += pulp.lpSum([x[r][t] for r in range(num_radars)]) >= required_stations[t]
+    total_time = []
+    for r in range(num_radars):
+        key = (r, t)
+        visibles = radar_target_vis_dict.get(key, [])
+        total_time.append(pulp.lpSum([
+            y[r][t][a] * visibles[a][2] / 60 for a in range(len(visibles))
+        ]))
+    prob += pulp.lpSum(total_time) >= required_observation_time[t]
+
+for r in range(num_radars):
+    prob += pulp.lpSum([x[r][t] for t in range(num_targets)]) <= radar_capacities[r]
+
+print("约束条件设置完成")
+
 print("开始求解...")
-prob.solve()
+result_status = prob.solve(pulp.PULP_CBC_CMD())
+print(f"求解完成，状态: {pulp.LpStatus[result_status]}")
 
-# 输出求解状态
-print("求解完成，状态:", pulp.LpStatus[prob.status])
+if pulp.LpStatus[result_status] == 'Infeasible':
+    print("模型无可行解，请检查约束条件是否过于严格。")
+else:
+    for r in range(num_radars):
+        for t in range(num_targets):
+            for a in range(len(y[r][t])):
+                if y[r][t][a].value() is not None and y[r][t][a].value() > 0.5:
+                    print(f"雷达{r}对目标{t}在弧段{a}进行观测。")
+
 
 # 获取结果
 selected_assignments = [
@@ -219,26 +216,58 @@ selected_observations = [
     if y[r][t][a].value() > 0.5
 ]
 
+# 输出结果
+print("\n--- 规划结果 ---")
+for r, t in selected_assignments:
+    print(f"雷达 {r+1} 分配给了目标 {t+1}")
+    key = (r, t)
+    if key in radar_target_vis_dict:
+        visibles = radar_target_vis_dict[key]
+        for a in range(len(visibles)):
+            if y[r][t][a].value() > 0.5:
+                start = visibles[a][0].isot
+                end = visibles[a][1].isot
+                dur = visibles[a][2] / 60
+                print(f"  使用可见弧段: {start} ~ {end}, 持续 {dur:.2f} 分钟")
+
 ## 数据可视化
 def plot_schedule(assignments, observations):
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(14, 8))
 
-    for r, t in assignments:
-        for a in range(len(radar_target_visibilities[(r * num_targets + t)]["visible_windows"])):
-            if (r, t, a) in observations:
-                start_time = radar_target_visibilities[(r * num_targets + t)]["visible_windows"][a][0]
-                end_time = radar_target_visibilities[(r * num_targets + t)]["visible_windows"][a][1]
-                duration = (end_time - start_time).to_value(u.min)
+    radar_names = [f"雷达{i+1}" for i in range(num_radars)]
+    target_names = [f"目标{j+1}" for j in range(num_targets)]
 
-                # 绘制时间条形图
-                ax.barh(f"雷达{r+1}-目标{t+1}", width=duration,
-                        left=(start_time - start_time).to_value(u.min),
-                        edgecolor='black', label=f"雷达{r+1} -> 目标{t+1}")
+    # 给不同目标分配不同颜色
+    import matplotlib.cm as cm
+    import numpy as np
 
-    ax.set_xlabel("时间 (分钟)")
-    ax.set_title("空间目标探测任务调度计划")
-    ax.grid(True)
+    cmap = cm.get_cmap('tab20', num_targets)
+    colors = [cmap(i) for i in range(num_targets)]
+
+    yticks = []
+    ytick_labels = []
+    y_base = 0
+
+    for r in range(num_radars):
+        for t in range(num_targets):
+            for a in range(len(y[r][t])):
+                if y[r][t][a].value() > 0.5:
+                    start_time = radar_target_vis_dict[(r, t)][a][0].datetime
+                    end_time = radar_target_vis_dict[(r, t)][a][1].datetime
+                    ax.barh(y_base, (end_time - start_time).total_seconds() / 60,  # 时长（分钟）
+                            left=start_time,
+                            height=0.8,
+                            color=colors[t],
+                            edgecolor='black')
+                    yticks.append(y_base)
+                    ytick_labels.append(f"{radar_names[r]} → {target_names[t]}")
+                    y_base += 1
+
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(ytick_labels, fontsize=10)
+    ax.set_xlabel("时间", fontsize=12)
+    ax.set_title("雷达观测任务排程图", fontsize=14)
+    ax.grid(True, linestyle='--', alpha=0.5)
+    fig.autofmt_xdate()
     plt.tight_layout()
     plt.show()
-
-plot_schedule(selected_assignments, selected_observations)
