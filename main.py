@@ -1,3 +1,5 @@
+import pprint
+
 import pandas as pd
 import pulp
 from astropy.time import Time
@@ -108,19 +110,24 @@ try:
     usable_arcs_path = r"simData/usableArcs.mat"
     usable_arcs_data = sio.loadmat(usable_arcs_path)['usableArcs']
 
+    # print(usable_arcs_data)
+    # 加载时间戳数据
+    simDate_path = r"simData/simDate.mat"
+    simDate = sio.loadmat(simDate_path)['simDate']
+
     # 构建每个雷达-卫星对的可见弧段列表
     radar_target_visibilities = []
 
     for i in range(len(usable_arcs_data)):
-        sat_id = int(usable_arcs_data[i][0][0]) - 1  # 卫星索引从0开始
-        radar_id = int(usable_arcs_data[i][1][0]) - 1  # 雷达索引从0开始
-        arc_chain = usable_arcs_data[i][2]  # 弧段时间范围（列索引）
-        arc_durations = usable_arcs_data[i][3]  # 每个弧段时长（秒）
+        sat_id = usable_arcs_data[i][0][0][0][0]  # 卫星索引
+        radar_id = usable_arcs_data[i][0][1][0][0]  # 雷达索引
+        arc_chain = usable_arcs_data[i][0][2] # 弧段时间范围（列索引）
+        arc_durations = usable_arcs_data[i][0][3]  # 每个弧段时长（秒）
 
         # 转换为起止时间戳（UTC 时间）
         visible_windows = []
         for j in range(arc_chain.shape[0]):
-            start_idx = arc_chain[j, 0] - 1  # MATLAB 是1-based索引
+            start_idx = arc_chain[j, 0] - 1  # MATLAB 是1-based索引，start_idx是作用在python array上的，所以需要减去1
             end_idx = arc_chain[j, 1] - 1
             start_time_utc = Time(
                 f"{int(simDate[0, start_idx])}-{int(simDate[1, start_idx]):02d}-{int(simDate[2, start_idx]):02d}T"
@@ -132,6 +139,7 @@ try:
                 f"{int(simDate[3, end_idx]):02d}:{int(simDate[4, end_idx]):02d}:{int(simDate[5, end_idx]):02d}",
                 format='isot', scale='utc'
             )
+
             visible_windows.append((start_time_utc, end_time_utc, arc_durations[j, 0]))
 
         radar_target_visibilities.append({
@@ -150,6 +158,8 @@ else:
 x = pulp.LpVariable.dicts("RadarTargetAssignment", 
                           [(r, t) for r in range(num_radars) for t in range(num_targets)], 
                           cat='Binary')
+
+pprint.pprint(radar_target_visibilities)
 
 # y[r][t][a] 表示雷达r对目标t在第a个可见弧段是否执行探测
 y = pulp.LpVariable.dicts("ObservationArcSelection",
