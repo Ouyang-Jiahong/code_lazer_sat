@@ -1,77 +1,65 @@
 import pandas as pd
 import pulp
 from astropy.time import Time
-from astropy import units as u
-from astropy.coordinates import EarthLocation
-from matplotlib import rcParams
-from poliastro.bodies import Earth
-from poliastro.twobody import Orbit
 import scipy.io as sio
-import matplotlib.pyplot as plt
-import numpy as np
+from functions import *
 
-# 设置中文字体和解决负号显示问题
-plt.rcParams['font.sans-serif'] = ['SimHei']  # 指定默认字体为黑体
-plt.rcParams['axes.unicode_minus'] = False    # 解决负号 '-' 显示为方块的问题
+# 加载仿真数据
+sensor_data = pd.read_excel("simData/sensorData.xlsx")  # 测站信息
+require_data = pd.read_excel("simData/requireData.xlsx")  # 目标与任务需求信息
+usable_arcs = sio.loadmat("simData/usableArcs.mat")["usableArcs"]  # 可用观测弧段信息
+simDate = sio.loadmat("simData/simDate.mat")["simDate"]  # 仿真时间节点（UTC）
 
-# 加载数据
-sensor_data = pd.read_excel("simData/sensorData.xlsx")
-require_data = pd.read_excel("simData/requireData.xlsx")
+# 初始化基础参数
+num_radars = len(sensor_data)  # 测站总数
+num_targets = len(require_data)  # 目标总数
 
-# 参数准备
-num_radars = len(sensor_data)
-num_targets = len(require_data)
+# 提取测站能力参数
+radar_capacities = sensor_data["最大探测目标数"].values  # 各测站最大可同时观测目标数
+
+# 提取任务需求参数
+required_stations = require_data["需要的测站数量"].values  # 各目标所需的最小观测测站数
+required_observation_time = require_data["需要的观测时间(min)"].values  # 有效观测所需的最小累计观测时长
+required_arc_count = require_data["需要的弧段数量"].values  # 判断任务完成所需的最小有效观测次数
+priority_weights = require_data["优先级(数值越大，优先级越高)"].values  # 各目标任务的优先级权重
 
 start_time = Time("2021-10-14T04:00:00", format='isot', scale='utc')
 
-def create_orbit_from_elements(row):
-    a = row["半长轴（km)"] * u.km
-    ecc = row["偏心率"] * u.one
-    inc = row["轨道倾角(°)"] * u.deg
-    raan = row["升交点赤经(°)"] * u.deg
-    argp = row["近地点幅角(°）"] * u.deg
-    nu = row["平近点角(°)"] * u.deg
-    return Orbit.from_classical(Earth, a, ecc, inc, raan, argp, nu)
-
-def radar_to_ecef(radar_row):
-    lon = radar_row["部署经度(°）"] * u.deg
-    lat = radar_row["部署纬度(°）"] * u.deg
-    alt = radar_row["部署高度(km)"] * u.km
-    loc = EarthLocation(lon=lon, lat=lat, height=alt)
-    return loc.get_itrs(obstime=start_time).cartesian.xyz.to(u.km)
-
-orbits = [create_orbit_from_elements(require_data.iloc[i]) for i in range(num_targets)]
-radar_positions = [radar_to_ecef(sensor_data.iloc[i]) for i in range(num_radars)]
-radar_capacities = sensor_data["最大探测目标数"].values
-required_stations = require_data["需要的测站数量"].values
-required_observation_time = require_data["需要的观测时间(min)"].values
-required_arc_count = require_data["需要的弧段数量"].values
-priority_weights = require_data["优先级(数值越大，优先级越高)"].values
-
-# 加载可见弧段
-usable_arcs = sio.loadmat("simData/usableArcs.mat")["usableArcs"]
-simDate = sio.loadmat("simData/simDate.mat")["simDate"]
-
+# 构建观测可见性字典：键为(测站编号, 目标编号)，值为该组合下所有可见时间窗口及其时长
 radar_target_vis_dict = {}
 for i in range(len(usable_arcs[0])):
-    sat_id = usable_arcs[0][i][0][0][0]
-    radar_id = usable_arcs[0][i][1][0][0]
-    arc_chain = usable_arcs[0][i][2]
-    arc_durations = usable_arcs[0][i][3]
-    visible_windows = []
+    sat_id = usable_arcs[0][i][0][0][0]  # 目标编号
+    radar_id = usable_arcs[0][i][1][0][0]  # 测站编号
+    arc_chain = usable_arcs[0][i][2]  # 当前测站-目标组合的所有可见时间段（起止索引）
+    arc_durations = usable_arcs[0][i][3]  # 对应时间段的观测时长（单位：分钟）
+
+    visible_windows = []  # 用于存储当前组合的所有可见窗口
+
+    # 遍历该测站-目标组合的所有可见时间段
     for j in range(arc_chain.shape[0]):
-        s_idx = arc_chain[j, 0] - 1
-        e_idx = arc_chain[j, 1] - 1
-        s_time = Time(f"{int(simDate[0,s_idx])}-{int(simDate[1,s_idx]):02d}-{int(simDate[2,s_idx]):02d}T"
-                      f"{int(simDate[3,s_idx]):02d}:{int(simDate[4,s_idx]):02d}:{int(simDate[5,s_idx]):02d}",
+        s_idx = arc_chain[j, 0] - 1  # 起始时间索引（减1是因为 MATLAB 索引从1开始）
+        e_idx = arc_chain[j, 1] - 1  # 终止时间索引
+
+        # 构造起始时间（UTC格式）
+        s_time = Time(f"{int(simDate[0, s_idx])}-{int(simDate[1, s_idx]):02d}-{int(simDate[2, s_idx]):02d}T"
+                      f"{int(simDate[3, s_idx]):02d}:{int(simDate[4, s_idx]):02d}:{int(simDate[5, s_idx]):02d}",
                       format='isot', scale='utc')
-        e_time = Time(f"{int(simDate[0,e_idx])}-{int(simDate[1,e_idx]):02d}-{int(simDate[2,e_idx]):02d}T"
-                      f"{int(simDate[3,e_idx]):02d}:{int(simDate[4,e_idx]):02d}:{int(simDate[5,e_idx]):02d}",
+
+        # 构造终止时间（UTC格式）
+        e_time = Time(f"{int(simDate[0, e_idx])}-{int(simDate[1, e_idx]):02d}-{int(simDate[2, e_idx]):02d}T"
+                      f"{int(simDate[3, e_idx]):02d}:{int(simDate[4, e_idx]):02d}:{int(simDate[5, e_idx]):02d}",
                       format='isot', scale='utc')
+
+        # 将时间窗口及对应时长加入列表
         visible_windows.append((s_time, e_time, arc_durations[j, 0]))
+
+    # 存入可见性字典
     radar_target_vis_dict[(radar_id, sat_id)] = visible_windows
 
-# 构建模型
+print("加载数据完成！")
+
+## 构建模型
+print("模型构建中...")
 prob = pulp.LpProblem("Observation_Planning", pulp.LpMaximize)
 
 # 决策变量
