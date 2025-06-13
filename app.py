@@ -2,20 +2,27 @@ import dash
 from dash import dcc, html, Input, Output
 import plotly.express as px
 import pandas as pd
+from data import radar_target_vis_dict, simDate
 
-from data import radar_target_vis_dict
+def index_to_utc(idx):
+    """将 simDate 中的时间索引转为 ISO 格式的 UTC 时间字符串"""
+    t = simDate[:, idx]
+    return f"{int(t[0])}-{int(t[1]):02d}-{int(t[2]):02d}T{int(t[3]):02d}:{int(t[4]):02d}:{int(t[5]):02d}"
 
 # 构造可视化数据表：遍历每一个 (雷达, 目标) 的可见弧段列表，生成记录
 records = []
 for (r, s), arc_list in radar_target_vis_dict.items():
-    for a_idx, (start, end, duration) in enumerate(arc_list):
+     for a_idx, (s_idx, e_idx, duration) in enumerate(arc_list):
+        start_time = index_to_utc(s_idx)
+        end_time = index_to_utc(e_idx)
+        
         records.append({
             "radar": r,                      # 雷达编号
             "target": s,                     # 目标编号
             "arc_index": a_idx,              # 弧段编号（每对 r,s 内部编号）
-            "start": start.utc.datetime,     # 弧段起始时间（UTC时间戳）
-            "end": end.utc.datetime,         # 弧段终止时间（UTC时间戳）
-            "duration_min": duration         # 弧段持续时间（单位可根据需要处理）
+            "duration_min": duration,        # 弧段持续时间（单位可根据需要处理）
+            "start": start_time,
+            "end": end_time 
         })
 
 # 将所有记录构建为 DataFrame，便于后续绘图
