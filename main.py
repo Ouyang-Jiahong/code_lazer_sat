@@ -1,6 +1,7 @@
-from doctest import debug
+from warnings import catch_warnings
 
-import pulp
+import coptpy as cp
+from coptpy import COPT
 
 ## 数据导入
 # 通过 from data import ... 语句，执行了 data.py 中的预处理逻辑，完成数据加载。
@@ -20,126 +21,94 @@ from data import (
 
 print("【数据导入】成功加载所有数据！")
 
-## 数据预处理
-# 1.将不符合目标要求的可用探测弧段（即无效弧段）进行删除
+# ----------------------------
+# 初始化 COPT 环境与模型
+# ----------------------------
+env = cp.Envr()
+model = env.createModel("Radar_Target_Observation_Planning")
 
-# 2.……
+# ----------------------------
+# 定义集合与索引
+# ----------------------------
+radars = list(range(len(sensor_data)))                # 雷达编号从 0 开始
+targets = list(range(len(require_data)))              # 目标编号从 0 开始
 
-## 求解器参数设置
-# print("模型构建中...")
-# prob = pulp.LpProblem("Observation_Planning", pulp.LpMaximize)
-#
-# # 雷达与目标集合
-# radar_ids = sensor_data.index.tolist()
-# target_ids = require_data.index.tolist()
-#
-# # 决策变量 x[r, s, a]：雷达r是否在弧段a上对目标s观测
-# x = {}
-# arc_index = {}
-# arc_duration = {}
-#
-# for (r, s), vis_list in radar_target_vis_dict.items():
-#     arc_index[(r, s)] = []
-#     for a, (start, end, duration) in enumerate(vis_list):
-#         var = pulp.LpVariable(f"x_{r}_{s}_{a}", cat="Binary")
-#         x[(r, s, a)] = var
-#         arc_index[(r, s)].append(a)
-#         arc_duration[(r, s, a)] = duration
-#
-# # 变量 y[s]：目标s是否完成任务
-# y = {}
-# for s in target_ids:
-#     y[s] = pulp.LpVariable(f"y_{s}", cat="Binary")
-#
-# # 变量 delta[r, s]：雷达r是否有效观测了目标s
-# delta = {}
-# for (r, s) in arc_index:
-#     delta[(r, s)] = pulp.LpVariable(f"delta_{r}_{s}", cat="Binary")
-#
-# # 变量 z[s, a]：目标s在弧段a上是否被观测
-# z = {}
-# arc_map = {}
-#
-# for s in target_ids:
-#     z[s] = {}
-#     arc_map[s] = set()
-#     for (r, s_), arcs in arc_index.items():
-#         if s_ != s:
-#             continue
-#         for a in arcs:
-#             z[s][a] = pulp.LpVariable(f"z_{s}_{a}", cat="Binary")
-#             arc_map[s].add((r, a))
-#
-# # 目标函数：加权最大任务完成数
-# objective = []
-# for s in target_ids:
-#     objective.append(priority_weights[s] * y[s])
-# prob += pulp.lpSum(objective)
-#
-# # 约束1：测站数量约束 + 有效观测时间
-# for s in target_ids:
-#     # 至少有 enough stations
-#     station_sum = []
-#     for r in radar_ids:
-#         if (r, s) in delta:
-#             station_sum.append(delta[(r, s)])
-#     prob += pulp.lpSum(station_sum) >= required_stations[s] * y[s]
-#
-#     # 每个雷达的时间与delta绑定
-#     for r in radar_ids:
-#         if (r, s) not in arc_index:
-#             continue
-#
-#         time_sum = []
-#         use_sum = []
-#         for a in arc_index[(r, s)]:
-#             time_sum.append(arc_duration[(r, s, a)] * x[(r, s, a)])
-#             use_sum.append(x[(r, s, a)])
-#
-#         prob += pulp.lpSum(time_sum) >= required_observation_time[s] * delta[(r, s)]
-#         prob += delta[(r, s)] <= pulp.lpSum(use_sum)
-#
-# # 约束2：弧段被观测次数约束
-# for s in target_ids:
-#     z_sum = []
-#     for a in z[s]:
-#         z_sum.append(z[s][a])
-#     prob += pulp.lpSum(z_sum) >= required_arc_count[s] * y[s]
-#
-#     for (r, a) in arc_map[s]:
-#         key = (r, s, a)
-#         if key in x:
-#             prob += z[s][a] >= x[key]
-#
-# # 约束3：雷达同时观测能力限制（每时刻不超过容量）
-# time_steps = simDate.shape[1]
-# for r in radar_ids:
-#     for t in range(time_steps):
-#         relevant_xs = []
-#
-#         for (r2, s), arcs in arc_index.items():
-#             if r2 != r:
-#                 continue
-#
-#             for a in arcs:
-#                 s_time, e_time, _ = radar_target_vis_dict[(r, s)][a]
-#                 current_time = start_time + t * u.min
-#                 if s_time <= current_time <= e_time:
-#                     relevant_xs.append(x[(r, s, a)])
-#
-#         if relevant_xs:
-#             prob += pulp.lpSum(relevant_xs) <= radar_capacities[r]
-#
-# # 求解模型
-# print("模型构建完成，开始求解...")
-# print("变量数量：", len(prob.variables()))
-# print("约束数量：", len(prob.constraints))
-# prob.solve()
-#
-# # 输出结果
-# print("求解状态：", pulp.LpStatus[prob.status])
-# print("目标函数值：", pulp.value(prob.objective))
-#
-# for s in target_ids:
-#     if pulp.value(y[s]) > 0.5:
-#         print(f"目标 {s} 完成观测任务，权重 {priority_weights[s]}")
+# 构建卫星编号到索引的映射
+sat_id_to_index = {}
+for idx, sat_id in enumerate(require_data["目标编号"]):
+    sat_id_to_index[sat_id] = idx
+
+# 构建雷达编号到索引的映射
+radar_id_to_index = {}
+for idx, radar_id in enumerate(sensor_data["雷达编号"]):
+    radar_id_to_index[radar_id] = idx
+
+# 构建每个雷达-目标的所有可见弧段索引
+# 如果arc_indices的元素为[-1]，则说明这个元素对应的雷达-目标没有可见弧段
+arc_indices = {}
+for (r, s), windows in radar_target_vis_dict.items():
+    if len(windows) == 0:
+        arc_indices[(radar_id_to_index[r], sat_id_to_index[s])] = [-1]
+    else:
+        arc_indices[(radar_id_to_index[r], sat_id_to_index[s])] = list(range(len(windows)))
+
+# 时间点总数（用于雷达并发限制）
+num_time_points = simDate.shape[1]
+
+# ----------------------------
+# 定义决策变量
+# ----------------------------
+# x[r][s][a]：雷达 r 在第 a 个可见弧段观测目标 s？x[r][s][a]获取的是一个coptpy.Var变量，这个变量可以通过x[r][s][a].x获取其数值，0或1
+x = [[[] for _ in range(len(targets))] for _ in range(len(radars))]
+for r in radars:
+    for s in targets:
+        arcs = arc_indices.get((r, s), [])
+        for a in arcs:
+            var_name = f"x_{r}_{s}_{a}"
+            if a == -1:
+                x[r][s].append(None)  # 无可见弧段
+            else:
+                x[r][s].append(model.addVar(vtype=COPT.BINARY, name=var_name))
+
+# y[s]：目标 s 是否被有效观测
+y = [model.addVar(vtype=COPT.BINARY, name=f"y_{s}") for s in targets]
+
+# ----------------------------
+# 设置目标函数
+# ----------------------------
+obj_expr = sum(priority_weights[s] * y[s] for s in targets)
+model.setObjective(obj_expr, sense=COPT.MAXIMIZE)
+
+# ----------------------------
+# 添加约束条件
+# ----------------------------
+
+
+# ----------------------------
+# 设置求解参数
+# ----------------------------
+
+
+# ----------------------------
+# 求解模型
+# ----------------------------
+model.solve()
+
+# ----------------------------
+# 输出结果
+# ----------------------------
+if model.status == COPT.OPTIMAL:
+    print("找到可行解，目标值为:", model.objval)
+    for r in radars:
+        for s in targets:
+            for a in arc_indices.get((r, s), []):
+                if x[r][s][a].x > 0.5:
+                   print(f"雷达 {r} 观测目标 {s} 弧段 {a}："
+                      f"{radar_target_vis_dict[(r, s)][a][0]} ~ "
+                      f"{radar_target_vis_dict[(r, s)][a][1]}")
+else:
+    print("未找到可行解。")
+
+# ----------------------------
+# 可视化
+# ----------------------------
