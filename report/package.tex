@@ -1,0 +1,100 @@
+\usepackage{amsmath}                                    % 排版数学公式
+
+% 使equation计数器也依赖于section计数器
+\numberwithin{equation}{section}
+
+% 使table计数器也依赖于section计数器
+\numberwithin{table}{section}
+
+% 使figure计数器也依赖于section计数器
+\numberwithin{figure}{section}
+
+\usepackage{latexsym}
+\usepackage{amsfonts}                                   %数学符号字体库宏包套件，它包含有：amsfonts、amssymb、eufrak 和 eucal 四个宏包。
+\usepackage{amssymb}                                    % 定义AMS的数学符号命令
+\usepackage{mathrsfs}                                   % 数学RSFS书写字体
+\usepackage{bm}                                         % 数学黑体
+\usepackage{graphicx}                                   % 支持插图,图形宏包graphics的扩展宏包
+\usepackage{color,xcolor}                               % 支持彩色
+\usepackage{amscd}
+\usepackage[linesnumbered,ruled,vlined]{algorithm2e}
+\usepackage{diagbox}
+\usepackage{minted}
+\usepackage{titlesec}                                   %设置章节格式
+\usepackage{tcolorbox}
+
+% 设置 paragraph 为只有一级编号（从1开始）
+\renewcommand{\theparagraph}{\arabic{paragraph}} % 只显示一级编号
+\makeatletter
+\@addtoreset{paragraph}{section} % 每节开始时重置 paragraph 计数器
+\makeatother
+
+%%文本框设置
+\newcommand{\tbox}[1]{
+  \begin{center}
+    \begin{tcolorbox}[colback=gray!10,%gray background
+        colframe=black,% black frame colour
+        width=14cm,% Use 8cm total width,
+        arc=1mm, auto outer arc,
+        boxrule=0.5pt,
+      ]
+      {#1}
+    \end{tcolorbox}
+  \end{center}
+}
+
+% 设置 paragraph 为 block 风格，自动换行
+\titleformat{\paragraph}[block]
+  {\normalfont\normalsize\bfseries}{\theparagraph.}{0.5em}{}
+
+% 设置标题后换行（after-sep 设为 \newline）
+\titlespacing*{\paragraph}{0pt}{3.25ex plus 1ex minus .2ex}{0pt}
+  
+\usepackage{enumerate}                                 	%更改enumerate环境格式
+\usepackage{hyperref}
+
+%改变超链接颜色
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=blue,      
+    urlcolor=blue,
+    citecolor=cyan,
+}
+
+\usepackage{subcaption}
+\usepackage{minipage-marginpar}
+\usepackage{float}%提供float浮动环境
+\usepackage{booktabs}%提供命令\toprule、\midrule、\bottomrule
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage[perpage]{footmisc}
+
+% 自定义命令，用于角标引用文献和交叉引用
+\newcommand{\scite}[1]{\textsuperscript{\cite{#1}}}
+\newcommand{\sref}[1]{\textsuperscript{\ref{#1}}}
+\newcommand{\bs}[1]{\boldsymbol{#1}}
+\newcommand{\romannumber}[1]{\uppercase\expandafter{\romannumeral#1}}
+\newcommand{\alert}[1]{\textcolor{red}{#1}}
+%%对一些autoref的中文引用名作修改
+\def\equationautorefname{式}
+\def\footnoteautorefname{脚注}
+\def\itemautorefname{项}
+\def\figureautorefname{图}
+\def\tableautorefname{表}
+\def\partautorefname{篇}
+\def\appendixautorefname{附录}
+\def\chapterautorefname{章}
+\def\sectionautorefname{节}
+\def\subsectionautorefname{小小节}
+\def\subsubsectionautorefname{subsubsection}
+\def\paragraphautorefname{段落}
+\def\subparagraphautorefname{子段落}
+\def\FancyVerbLineautorefname{行}
+\def\theoremautorefname{定理}
+
+% 设置标题层级和目录层级
+\setcounter{tocdepth}{3}
+\setcounter{secnumdepth}{4}
