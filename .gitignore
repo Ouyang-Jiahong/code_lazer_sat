@@ -12,3 +12,54 @@
 *.name
 *.pdf
 *.pyc
+
+# LaTeX 编译生成的文件
+*.aux
+*.bcf
+*.blg
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.pdf
+*.dvi
+*.ps
+*.synctex.gz
+*.run.xml
+*.xdv
+*.synctex(busy)
+
+# BibTeX 和 Biber 生成的文件
+*.bbl
+*.bcf
+*.blg
+
+# TeX 工作目录缓存
+*.gz
+*.bak
+*.orig
+*.vrb
+
+# 编辑器自动保存的文件
+*~
+*.swp
+.*.swp
+
+# 目录中的临时文件
+CVS/
+*/CVS/
+.DS_Store
+Thumbs.db
+
+# 特定编辑器/IDE 的配置文件
+*.kile-cache
+*.tex.swp
+*.texpadtmp
+
+# 自定义构建目录（如果你把编译输出放到单独目录中）
+build/
+output/
+dist/
