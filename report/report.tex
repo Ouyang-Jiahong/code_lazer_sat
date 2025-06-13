@@ -1,0 +1,57 @@
+\documentclass[openany,12pt,UTF8]{ctexart}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\include{package}
+\title{程序说明}
+\author{欧阳嘉鸿}
+\date{\today}
+\begin{document}
+\maketitle
+\newpage
+\tableofcontents
+\newpage
+\section{数学模型}
+
+\subsection{决策变量}
+定义如下布尔型决策变量：
+$$
+    x_{r,s,a} =
+    \begin{cases}
+        1, & \text{若雷达 } r \text{ 在其第 } a \text{ 个可见弧段对目标 } s \text{ 进行观测} \\
+        0, & \text{否则}
+    \end{cases}
+$$
+其中：$r \in R$（雷达集合），$s \in S$（目标集合），$a \in A_{r,s}$（雷达 $r$ 对目标 $s$ 可观测的弧段索引集合）
+
+\subsection{目标函数}
+首先，我们定义以下两个关键概念：
+
+\textbf{有效观测}：若雷达 $r$ 对目标 $s$ 的一次观测满足观测时长 $t_{r,s}$ 大于目标要求的最小观测时长 $T_s^{\min}$，则称这次观测为有效观测。
+
+\textbf{有效观测目标}：若目标 $s$ 从 $N_r$ 个不同雷达处共获得 $N_s$ 次有效观测，并且 $N_r$ 不小于目标要求的最小测站数量 $M_s^{\min}$，且 $N_s$ 不小于目标要求的最小有效观测次数 $N_s^{\min}$，则称目标 $s$ 为有效观测目标。
+
+目标函数 $J$ 表示所有有效观测目标数量的加权和：
+$$
+    \max J = \sum_{s \in S} w_s \cdot y_s
+$$
+其中：
+\begin{itemize}
+    \item $w_s$：目标 $s$ 的权重（优先级）；
+    \item $y_s$：二值变量，表示目标 $s$ 是否为有效观测目标。
+\end{itemize}
+
+\subsection{约束条件}
+
+\subsubsection{雷达观测容量约束}
+每部雷达在任一时刻最多只能同时观测 $C_r$ 个目标。考虑离散时间索引 $t \in T$，有：
+$$
+    \sum_{s \in S} \sum_{a \in A_{r,s}^t} x_{r,s,a} \leq C_r, \quad \forall r \in R,\ \forall t \in T
+$$
+其中：
+\begin{itemize}
+    \item $A_{r,s}^t$：时刻 $t$ 时，雷达 $r$ 可用于观测目标 $s$ 的弧段集合
+    \item $T$：时间步长集合
+\end{itemize}
+
+以上模型描述了一个带有可见性窗口和有效时长判据的多雷达-多目标分配问题，旨在在资源受限下最大化目标的有效观测收益。
+
+\end{document}
