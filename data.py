@@ -35,7 +35,7 @@ for i in range(len(usable_arcs[0])):
     sat_id = usable_arcs[0][i][0][0][0]  # 目标编号
     radar_id = usable_arcs[0][i][1][0][0]  # 测站编号
     arc_chain = usable_arcs[0][i][2]  # 所有可见时间段（起止索引）
-    arc_durations = usable_arcs[0][i][3]  # 对应时间段的观测时长（单位：分钟）
+    arc_durations = usable_arcs[0][i][3] / 60 # 对应时间段的观测时长（单位：分钟）
 
     visible_windows = []
 
@@ -43,19 +43,19 @@ for i in range(len(usable_arcs[0])):
         s_idx = arc_chain[j, 0] - 1  # 起始时间索引（MATLAB从1开始，转换为Python索引）
         e_idx = arc_chain[j, 1] - 1  # 结束时间索引
 
-        # 构造UTC时间格式的起止时间
-        s_time = Time(f"{int(simDate[0, s_idx])}-{int(simDate[1, s_idx]):02d}-{int(simDate[2, s_idx]):02d}T"
-                      f"{int(simDate[3, s_idx]):02d}:{int(simDate[4, s_idx]):02d}:{int(simDate[5, s_idx]):02d}",
-                      format='isot', scale='utc')
-
-        e_time = Time(f"{int(simDate[0, e_idx])}-{int(simDate[1, e_idx]):02d}-{int(simDate[2, e_idx]):02d}T"
-                      f"{int(simDate[3, e_idx]):02d}:{int(simDate[4, e_idx]):02d}:{int(simDate[5, e_idx]):02d}",
-                      format='isot', scale='utc')
-
         # 存储时间窗口及其持续时间
-        visible_windows.append((s_time, e_time, arc_durations[j, 0]))
+        visible_windows.append((s_idx, e_idx, arc_durations[j, 0]))
 
     # 写入全局可见性字典
+    # radar_target_vis_dict[(101,63399)][i][0]代表取第101号测站与63399号卫星之间的第i个可用弧段的起始时间点
+    # radar_target_vis_dict[(101,63399)][i][1]代表取第101号测站与63399号卫星之间的第i个可用弧段的终止时间点
+    # radar_target_vis_dict[(101,63399)][i][2]代表取第101号测站与63399号卫星之间的第i个可用弧段的持续时长
+    # 也可以这样理解：
+    # 获取第101号测站与63399号卫星之间的第一个可用弧段：
+    # window = radar_target_vis_dict[(101, 63399)][0]
+    # start_time_idx = window[0]   # 起始时间索引
+    # end_time_idx = window[1]     # 结束时间索引
+    # duration = window[2]         # 弧段持续时间（分钟）
     radar_target_vis_dict[(radar_id, sat_id)] = visible_windows
 
 print("[data.py] 数据预处理完成，radar_target_vis_dict 已构建。")
