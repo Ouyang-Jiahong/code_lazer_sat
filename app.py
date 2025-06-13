@@ -3,7 +3,7 @@ from dash import dcc, html, Input, Output
 import plotly.express as px
 import pandas as pd
 
-from main import radar_target_vis_dict  # 从主程序中导入雷达-目标-弧段字典
+from data import radar_target_vis_dict
 
 # 构造可视化数据表：遍历每一个 (雷达, 目标) 的可见弧段列表，生成记录
 records = []
