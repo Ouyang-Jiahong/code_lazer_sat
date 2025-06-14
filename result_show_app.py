@@ -1,12 +1,13 @@
 import dash
-from dash import dcc, html, Input, Output
+from dash import dcc, html, Input, Output, callback_context, no_update
+from dash.dcc import Download
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 
 # 从 main.py 导入变量
 try:
-    from main import require_data, sensor_data, radar_target_vis_dict, index_to_utc, radars, targets, arc_indices, x
+    from data_processing_module import require_data, sensor_data, radar_target_vis_dict, index_to_utc, radars, targets, arc_indices, x
 except ImportError as e:
     raise ImportError("请确保 main.py 中已定义并导出以下变量：radars, targets, arc_indices, x") from e
 
@@ -31,18 +32,18 @@ def build_schedule_data():
                         target_name = require_data.iloc[s]["目标编号"]
                         window = radar_target_vis_dict[(radar_name, target_name)][a]
                         schedule.append({
-                            "雷达": radar_name,
-                            "目标": target_name,
-                            "弧段": a,
-                            "开始时间": index_to_utc(window[0]),
-                            "结束时间": index_to_utc(window[1]),
-                            "持续时间(min)": window[2],
+                            "radar": radar_name,
+                            "target": target_name,
+                            "arc_index": a,
+                            "start": index_to_utc(window[0]),
+                            "end": index_to_utc(window[1]),
+                            "duration_min": window[2],
                         })
                 except Exception as e:
                     print(f"解析弧段 ({r}, {s}, {a}) 时出错: {e}")
     return pd.DataFrame(schedule)
 
-# 获取所有雷达和目标编号
+# 获取所有雷达和目标编号（用于下拉框显示中文）
 unique_radars = ['全部'] + [sensor_data.iloc[r]["雷达编号"] for r in radars]
 unique_targets = ['全部'] + list(require_data["目标编号"].unique())
 
@@ -72,6 +73,12 @@ app.layout = html.Div([
         ], style={'width': '48%', 'display': 'inline-block', 'padding': '10px'}),
     ]),
 
+    # 导出按钮
+    html.Div([
+        html.Button("导出 CSV", id="export-csv-btn", n_clicks=0, style={'margin': '10px'}),
+        Download(id="download-csv")
+    ], style={'textAlign': 'center'}),
+
     html.Div(id='output', children=[
         dcc.Graph(id='result-table'),
         dcc.Graph(id='gantt-chart')
@@ -95,13 +102,13 @@ def update_output(selected_target, selected_radar):
 
     # 筛选数据
     if selected_target != '全部':
-        df = df[df['目标'] == selected_target]
+        df = df[df['target'] == selected_target]
     if selected_radar != '全部':
-        df = df[df['雷达'] == selected_radar]
+        df = df[df['radar'] == selected_radar]
 
-    df["目标"] = df["目标"].astype(str)  # 关键：防止编号被压缩
+    df["target"] = df["target"].astype(str)  # 关键：防止编号被压缩
 
-    # 构建表格
+    # 构建表格（使用英文列名）
     table_fig = go.Figure(data=[
         go.Table(
             header=dict(values=list(df.columns)),
@@ -109,15 +116,16 @@ def update_output(selected_target, selected_radar):
         )
     ])
 
-    # 构建甘特图
-    target_order = sorted(df["目标"].unique(), reverse=True)
+    # 构建甘特图（y轴为 target，颜色为 radar）
+    target_order = sorted(df["target"].unique(), reverse=True)
     gantt_fig = px.timeline(
         df,
-        x_start="开始时间",
-        x_end="结束时间",
-        y="目标",
-        color="雷达",
-        title="观测任务甘特图"
+        x_start="start",
+        x_end="end",
+        y="target",
+        color="radar",
+        hover_data=["duration_min", "arc_index"],
+        title="Observation Task Gantt Chart"
     )
 
     gantt_fig.update_yaxes(
@@ -128,8 +136,8 @@ def update_output(selected_target, selected_radar):
     )
 
     gantt_fig.update_layout(
-        xaxis_title="时间（UTC）",
-        yaxis_title="目标编号",
+        xaxis_title="Time (UTC)",
+        yaxis_title="Target ID",
         title_x=0.5,
         height=max(600, 40 * len(target_order)),
         margin=dict(l=60, r=40, t=60, b=40)
@@ -137,8 +145,37 @@ def update_output(selected_target, selected_radar):
 
     return table_fig, gantt_fig
 
+
 # ----------------------------
-# 启动应用
+# 回调函数：导出 CSV 文件
 # ----------------------------
+@app.callback(
+    Output("download-csv", "data"),
+    Input("export-csv-btn", "n_clicks"),
+    [Input('target-select', 'value'),
+     Input('radar-select', 'value')],
+    prevent_initial_call=True
+)
+def export_csv(n_clicks, selected_target, selected_radar):
+    if n_clicks <= 0:
+        return no_update
+
+    df = build_schedule_data()
+
+    # 筛选目标
+    if selected_target != '全部':
+        df = df[df['target'] == selected_target]
+
+    # 筛选雷达
+    if selected_radar != '全部':
+        df = df[df['radar'] == selected_radar]
+
+    if df.empty:
+        return no_update
+
+    return dict(content=df.to_csv(index=False), filename="schedule_tasks.csv")
+
+
+# 启动本地服务器运行 Dash 应用
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=25526, debug=False)
