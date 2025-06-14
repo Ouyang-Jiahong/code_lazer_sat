@@ -1,7 +1,8 @@
-from warnings import catch_warnings
+import pandas as pd
 import coptpy as cp
 from coptpy import COPT
 
+from app import index_to_utc
 ## 数据导入
 # 通过 from data import ... 语句，执行了 data.py 中的预处理逻辑，完成数据加载。
 # 如需修改数据路径或调整数据结构，请修改 data.py 文件。
@@ -207,13 +208,14 @@ if model.status == COPT.OPTIMAL:
                         "雷达": radar_name,
                         "目标": target_name,
                         "弧段": a,
-                        "开始时间(UTC)": simDate[0][window[0]],
-                        "结束时间(UTC)": simDate[0][window[1]],
+                        "开始时间(UTC)": index_to_utc(window[0]),
+                        "结束时间(UTC)": index_to_utc(window[1]),
                         "持续时间(min)": window[2],
                     })
-    print("\n部分调度方案摘要：")
-    for entry in schedule[:10]:  # 只显示前10项
-        print(entry)
+    # 转换为 DataFrame 并格式化显示
+    df = pd.DataFrame(schedule)
+    print("\n 部分调度方案摘要（前10项）：")
+    print(df.head(10).to_string(index=False))
 else:
     print("未找到可行解。")
 
