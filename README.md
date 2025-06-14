@@ -26,17 +26,24 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple XXX
 
 > **注意：** 若在安装过程中遇到网络限制问题（如大量下载行为被拦截），建议更换网络环境或尝试其他镜像源。
 
+### COPT库的安装
+
+本项目使用杉数科技提供的商业混合整数规划求解器 COPT（Cardinal Optimizer）。该求解器支持高性能求解大规模 MILP、MIQP 等优化问题，并支持 Python 接口与 Gurobi 接近。具体使用过程中，通过构建 COPT 模型对象、添加变量与约束、设置目标函数并调用 model.solve() 进行求解。
+
+要安装此求解器，首先需要在``https://www.shanshu.ai/solver`` 上下载，然后进行安装。同时，要申请求解器的`license`，具体安装方式，见网站。
+
+
 ## 代码文件说明
-### main.py
+### data_processing_module.py
 该文件实现了空间目标探测任务的规划求解，使用 `copt` 库构建线性规划模型，包含数据导入、预处理、求解器参数设置、模型构建和求解等步骤。求解完成后会输出调度方案摘要，还可用于后续可视化扩展。
 
 ### data.py
 负责数据加载和预处理，从 Excel 文件和 MATLAB 数据文件中读取测站参数、任务需求、可见弧段等数据，并构建雷达 - 目标可见性字典。
 
-### app.py
+### visible_arc_visualization_app.py
 使用 Dash 框架开发的可视化工具，提供一个前端页面，用户可以通过下拉框选择目标编号，查看该目标的可见弧段时序图。
 
-### result_show.py
+### result_show_app.py
 同样基于 Dash 框架开发，用于以 HTML 形式显示 `main.py` 中计算出的雷达调度结果。支持选择目标和雷达编号，展示对应的调度表格和甘特图。
 
 ## 任务场景描述
