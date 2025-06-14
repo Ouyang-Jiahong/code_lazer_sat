@@ -1,5 +1,6 @@
 import dash
-from dash import dcc, html, Input, Output
+from dash import dcc, html, Input, Output, callback_context, no_update
+from dash.dcc import Download  # 用于下载文件
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
@@ -72,6 +73,12 @@ app.layout = html.Div([
         ], style={'width': '48%', 'display': 'inline-block', 'padding': '10px'}),
     ]),
 
+    # 导出按钮
+    html.Div([
+        html.Button("导出 CSV", id="export-csv-btn", n_clicks=0, style={'margin': '10px'}),
+        Download(id="download-csv")
+    ], style={'textAlign': 'center'}),
+
     html.Div(id='output', children=[
         dcc.Graph(id='result-table'),
         dcc.Graph(id='gantt-chart')
@@ -138,7 +145,7 @@ def update_output(selected_target, selected_radar):
     )
 
     # 获取 Y 轴顺序并倒序显示
-    y_order = sorted(df[y_col].unique(), key=lambda x: int(x) if isinstance(x, (int, float)) or str(x).isdigit() else x,
+    y_order = sorted(df[y_col].unique(), key=lambda x: int(x) if isinstance(x, (int, float)) or str(x).replace('.', '', 1).isdigit() else x,
                      reverse=True)
 
     gantt_fig.update_yaxes(
@@ -160,6 +167,40 @@ def update_output(selected_target, selected_radar):
     )
 
     return table_fig, gantt_fig
+
+
+# ----------------------------
+# 回调函数：导出 CSV 文件
+# ----------------------------
+@app.callback(
+    Output("download-csv", "data"),
+    Input("export-csv-btn", "n_clicks"),
+    [Input('target-select', 'value'),
+     Input('radar-select', 'value')],
+    prevent_initial_call=True
+)
+def export_csv(n_clicks, selected_target, selected_radar):
+    if n_clicks <= 0:
+        return no_update
+
+    # 复制原始数据以避免修改原数据
+    df = df_arcs.copy()
+
+    # 筛选目标
+    if selected_target != 'all':
+        df = df[df['target'] == selected_target]
+
+    # 筛选雷达
+    if selected_radar != 'all':
+        df = df[df['radar'] == selected_radar]
+
+    # 如果筛选后无数据
+    if df.empty:
+        return no_update
+
+    # 返回 CSV 下载
+    return dict(content=df.to_csv(index=False), filename="visible_arcs.csv")
+
 
 # 启动本地服务器运行 Dash 应用
 if __name__ == '__main__':
