@@ -18,18 +18,26 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple XXX
 - `openpyxl`
 - `deap`
 - `poliastro`
+- `dash`
+- `plotly`
+- `scipy`
+- `astropy`
+- `coptpy`
 
 > **注意：** 若在安装过程中遇到网络限制问题（如大量下载行为被拦截），建议更换网络环境或尝试其他镜像源。
 
 ## 代码文件说明
 ### main.py
-该文件实现了空间目标探测任务的规划求解，使用 `copt` 库构建线性规划模型，包含数据导入、预处理、求解器参数设置、模型构建和求解等步骤。
+该文件实现了空间目标探测任务的规划求解，使用 `copt` 库构建线性规划模型，包含数据导入、预处理、求解器参数设置、模型构建和求解等步骤。求解完成后会输出调度方案摘要，还可用于后续可视化扩展。
 
 ### data.py
 负责数据加载和预处理，从 Excel 文件和 MATLAB 数据文件中读取测站参数、任务需求、可见弧段等数据，并构建雷达 - 目标可见性字典。
 
 ### app.py
 使用 Dash 框架开发的可视化工具，提供一个前端页面，用户可以通过下拉框选择目标编号，查看该目标的可见弧段时序图。
+
+### result_show.py
+同样基于 Dash 框架开发，用于以 HTML 形式显示 `main.py` 中计算出的雷达调度结果。支持选择目标和雷达编号，展示对应的调度表格和甘特图。
 
 ## 任务场景描述
 
@@ -47,9 +55,15 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple XXX
 - 探测任务需求
 
 ### 输出结果
-
 输出应包含每部雷达在指定时间段内对各目标的详细探测安排，包括：
 
 - 探测起止时间
 - 是否执行探测任务
 - 探测顺序安排
+
+### 运行步骤
+1. 安装所需的 Python 库。
+2. 确保 `simData` 目录下的 `sensorData.xlsx`、`requireData.xlsx`、`usableArcs.mat` 和 `simDate.mat` 文件存在。
+3. 运行 `main.py` 进行任务规划求解。
+4. 运行 `app.py` 查看目标可见弧段时序图。
+5. 运行 `result_show.py` 查看雷达调度结果。
