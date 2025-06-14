@@ -1,94 +1,166 @@
 import dash
 from dash import dcc, html, Input, Output
+import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from data import radar_target_vis_dict, simDate
+
 
 def index_to_utc(idx):
     """将 simDate 中的时间索引转为 ISO 格式的 UTC 时间字符串"""
     t = simDate[:, idx]
     return f"{int(t[0])}-{int(t[1]):02d}-{int(t[2]):02d}T{int(t[3]):02d}:{int(t[4]):02d}:{int(t[5]):02d}"
 
+
 # 构造可视化数据表：遍历每一个 (雷达, 目标) 的可见弧段列表，生成记录
 records = []
 for (r, s), arc_list in radar_target_vis_dict.items():
-     for a_idx, (s_idx, e_idx, duration) in enumerate(arc_list):
+    for a_idx, (s_idx, e_idx, duration) in enumerate(arc_list):
         start_time = index_to_utc(s_idx)
         end_time = index_to_utc(e_idx)
-        
+
         records.append({
-            "radar": r,                      # 雷达编号
-            "target": s,                     # 目标编号
-            "arc_index": a_idx,              # 弧段编号（每对 r,s 内部编号）
-            "duration_min": duration,        # 弧段持续时间（单位可根据需要处理）
+            "radar": r,
+            "target": s,
+            "arc_index": a_idx,
+            "duration_min": duration,
             "start": start_time,
-            "end": end_time 
+            "end": end_time
         })
 
-# 将所有记录构建为 DataFrame，便于后续绘图
+# 将所有记录构建为 DataFrame
 df_arcs = pd.DataFrame(records)
+
+# 获取唯一的目标和雷达编号，用于下拉框选项
+unique_targets = sorted(df_arcs['target'].unique())
+unique_radars = sorted(df_arcs['radar'].unique())
+
+# 添加 '全部' 选项
+dropdown_targets = [{'label': '全部目标', 'value': 'all'}] + \
+                   [{'label': f"目标 {s}", 'value': s} for s in unique_targets]
+
+dropdown_radars = [{'label': '全部雷达', 'value': 'all'}] + \
+                  [{'label': f"雷达 {r}", 'value': r} for r in unique_radars]
 
 # 启动 Dash 应用
 app = dash.Dash(__name__)
+app.title = "可见弧段可视化"
 
-# 定义前端页面布局：包含标题、下拉框和图表区域
+# ----------------------------
+# 页面布局
+# ----------------------------
 app.layout = html.Div([
-    html.H2("目标任务可见弧段可视化工具"),  # 页面主标题
+    html.H2("目标任务可见弧段可视化工具", style={'textAlign': 'center'}),
 
-    html.Label("选择目标编号："),           # 下拉选择说明
+    html.Div([
+        html.Div([
+            html.Label("选择目标编号："),
+            dcc.Dropdown(
+                id='target-select',
+                options=dropdown_targets,
+                value='all'
+            ),
+        ], style={'width': '48%', 'display': 'inline-block', 'padding': '10px'}),
 
-    dcc.Dropdown(
-        id='target-dropdown',              # 下拉框控件 ID
-        options=[
-            {'label': f"目标 {s}", 'value': s}
-            for s in sorted(df_arcs['target'].unique())  # 按目标编号构建选项
-        ],
-        value=sorted(df_arcs['target'].unique())[0]      # 默认选择第一个目标
-    ),
+        html.Div([
+            html.Label("选择雷达编号："),
+            dcc.Dropdown(
+                id='radar-select',
+                options=dropdown_radars,
+                value='all'
+            ),
+        ], style={'width': '48%', 'display': 'inline-block', 'padding': '10px'}),
+    ]),
 
-    dcc.Graph(id='arc-plot')               # 图形展示区域
+    html.Div(id='output', children=[
+        dcc.Graph(id='result-table'),
+        dcc.Graph(id='gantt-chart')
+    ])
 ])
 
-# 定义回调函数：响应目标编号选择事件，更新时间轴图
+
+# ----------------------------
+# 回调函数：更新图表
+# ----------------------------
 @app.callback(
-    Output('arc-plot', 'figure'),          # 输出到图表组件
-    Input('target-dropdown', 'value')      # 输入来自下拉框组件
+    [Output('result-table', 'figure'),
+     Output('gantt-chart', 'figure')],
+    [Input('target-select', 'value'),
+     Input('radar-select', 'value')]
 )
-def update_arc_plot(selected_target):
-    # 根据选择的目标筛选数据
-    df = df_arcs[df_arcs['target'] == selected_target]
+def update_output(selected_target, selected_radar):
+    # 复制原始数据以避免修改原数据
+    df = df_arcs.copy()
 
-    # 若该目标无可视弧段，则返回空图提示
+    # 筛选目标
+    if selected_target != 'all':
+        df = df[df['target'] == selected_target]
+
+    # 筛选雷达
+    if selected_radar != 'all':
+        df = df[df['radar'] == selected_radar]
+
+    # 如果筛选后无数据
     if df.empty:
-        return px.scatter(title=f"目标 {selected_target} 无可用弧段")
+        empty_fig = go.Figure(layout=go.Layout(title="无可用数据"))
+        return empty_fig, empty_fig
 
-    # 使用 Plotly Express 绘制时间轴图（水平条形图）
-    fig = px.timeline(
+    # ----------------------------
+    # 构建表格
+    # ----------------------------
+    table_fig = go.Figure(data=[
+        go.Table(
+            header=dict(values=list(df.columns)),
+            cells=dict(values=[df[col] for col in df.columns])
+        )
+    ])
+
+    # ----------------------------
+    # 构建甘特图
+    # ----------------------------
+    if selected_target != 'all' and selected_radar != 'all':
+        y_col = "arc_index"
+        title = f"目标 {selected_target}, 雷达 {selected_radar} 可见弧段时序图"
+        yaxis_title = "弧段编号"
+    else:
+        y_col = "radar" if selected_target != 'all' else "target"
+        title = "多目标/雷达可见弧段时序图"
+        yaxis_title = "雷达编号" if selected_target != 'all' else "目标编号"
+
+    # 构建甘特图
+    gantt_fig = px.timeline(
         df,
-        x_start="start",       # 时间轴起点
-        x_end="end",           # 时间轴终点
-        y="radar",             # Y轴为雷达编号
-        color="radar",         # 不同雷达上色
-        hover_data=["duration_min", "arc_index"],  # 鼠标悬停显示信息
-        title=f"目标 {selected_target} 可见弧段时序图"
+        x_start="start",
+        x_end="end",
+        y=y_col,
+        color="radar" if selected_target != 'all' else "target",
+        hover_data=["duration_min", "arc_index"]
     )
 
-    # 设置纵轴方向为“从上到下”，符合时间轴习惯
-    fig.update_yaxes(autorange="reversed", title="测站编号")
+    # 获取 Y 轴顺序并倒序显示
+    y_order = sorted(df[y_col].unique(), key=lambda x: int(x) if isinstance(x, (int, float)) or str(x).isdigit() else x,
+                     reverse=True)
 
-    # 调整整体布局：高度、边距、标题
-    fig.update_layout(
-        height=600,
+    gantt_fig.update_yaxes(
+        autorange="reversed",
+        tickmode='array',
+        tickvals=y_order,
+        ticktext=[str(int(float(y))) if isinstance(y, (int, float)) or str(y).replace('.', '', 1).isdigit() else y for y
+                  in y_order],
+        title=yaxis_title
+    )
+
+    gantt_fig.update_layout(
+        title=title,
+        title_x=0.5,
         xaxis_title="时间（UTC）",
-        margin=dict(l=40, r=40, t=80, b=40)
+        yaxis_title=yaxis_title,
+        height=max(600, 40 * len(y_order)),
+        margin=dict(l=60, r=40, t=60, b=40)
     )
 
-    return fig
+    return table_fig, gantt_fig
 
-# 启动本地服务器运行 Dash 应用（调试模式）
+# 启动本地服务器运行 Dash 应用
 if __name__ == '__main__':
-    app.run(
-        host='127.0.0.1',     # 设置主机地址（默认也是这个）
-        port=25525,           # 设置自定义端口
-        debug=False           # 关闭调试模式
-    )
+    app.run(host='127.0.0.1', port=25525, debug=False)
