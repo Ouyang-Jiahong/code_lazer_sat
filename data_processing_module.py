@@ -2,7 +2,7 @@ import pandas as pd
 import coptpy as cp
 from coptpy import COPT
 
-from app import index_to_utc
+from visible_arc_visualization_app import index_to_utc
 ## 数据导入
 # 通过 from data import ... 语句，执行了 data.py 中的预处理逻辑，完成数据加载。
 # 如需修改数据路径或调整数据结构，请修改 data.py 文件。
