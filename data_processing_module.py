@@ -246,6 +246,54 @@ if model.status == COPT.OPTIMAL:
     df = pd.DataFrame(schedule)
     print("\n 部分调度方案摘要（前10项）：")
     print(df.head(10).to_string(index=False))
+
+    # ----------------------------
+    # 计算覆盖率：有效观测目标数量 / 总目标数量
+    # ----------------------------
+    num_targets = len(targets)
+    num_effective = sum(round(y[s].x) for s in targets)
+
+    coverage_rate = num_effective / num_targets
+
+    print(f"\n【覆盖率统计】")
+    print(f"总目标数量: {num_targets}")
+    print(f"有效观测目标数量: {num_effective}")
+    print(f"覆盖率: {coverage_rate:.2%}")
+
+    # ----------------------------
+    # 按优先级统计覆盖率（可选）
+    # ----------------------------
+    high_priority_count = 0
+    high_priority_effective = 0
+
+    medium_priority_count = 0
+    medium_priority_effective = 0
+
+    low_priority_count = 0
+    low_priority_effective = 0
+
+    for s in targets:
+        weight = priority_weights[s]
+        if weight >= 9:
+            high_priority_count += 1
+            high_priority_effective += round(y[s].x)
+        elif weight >= 7:
+            medium_priority_count += 1
+            medium_priority_effective += round(y[s].x)
+        else:
+            low_priority_count += 1
+            low_priority_effective += round(y[s].x)
+
+    print("\n【按优先级统计覆盖率】")
+    if high_priority_count > 0:
+        print(
+            f"高优先级目标覆盖率（优先级大于8）: {high_priority_effective}/{high_priority_count} -> {high_priority_effective / high_priority_count:.2%}")
+    if medium_priority_count > 0:
+        print(
+            f"中优先级目标覆盖率（优先级大于6）: {medium_priority_effective}/{medium_priority_count} -> {medium_priority_effective / medium_priority_count:.2%}")
+    if low_priority_count > 0:
+        print(
+            f"低优先级目标覆盖率: {low_priority_effective}/{low_priority_count} -> {low_priority_effective / low_priority_count:.2%}")
 else:
     print("未找到可行解。")
 
