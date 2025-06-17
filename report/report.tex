@@ -79,9 +79,10 @@
 
 此外，时间节点矩阵 \texttt{simDate} 是一个二维数组，表示整个仿真周期内的统一时间参考，供弧段时间索引定位与可视化模块使用。仿真起始时间 \texttt{start\_time} 用于构造 UTC 时间标签。通过模型求解后，遍历所有 \texttt{x[r][s][a]} 的值即可输出完整的调度方案，包括观测起止时间与分配的测站资源，适用于后续的任务下发与动态更新。
 
-\subsection{数学模型}
+\section{数学模型}
 本问题旨在为多个地面雷达调度多个空间目标的观测任务，实现有效资源分配并最大化任务完成度。
-\subsubsection{决策变量}
+
+\subsection{决策变量}
 定义如下布尔型决策变量：
 $$
     x_{r,s,a} =
@@ -92,18 +93,19 @@ $$
 $$
 其中：$r \in R$（雷达集合），$s \in S$（目标集合），$a \in A_{r,s}$（雷达 $r$ 对目标 $s$ 可观测的弧段索引集合）
 
-\subsubsection{目标函数}
-\tbox{
-首先，我们定义以下两个关键概念：
+此外，引入辅助二值变量 $y_s$ 表示目标 $s$ 是否被有效观测：
+$$
+    y_s =
+    \begin{cases}
+        1, & \text{若目标 } s \text{ 满足所有观测需求约束} \\
+        0, & \text{否则}
+    \end{cases}
+$$
 
-\textbf{有效观测}：若雷达 $r$ 对目标 $s$ 的一次观测满足观测时长 $t_{r,s}$ 大于目标要求的最小观测时长 $T_s^{\min}$，则称这次观测为有效观测。
+\subsection{目标函数}
+目标函数采用两阶段建模方式，第一阶段最大化加权有效观测目标数，第二阶段在保证主目标不变的前提下最小化雷达观测弧段总数。
 
-\textbf{有效观测目标}：若目标 $s$ 从 $N_r$ 个不同雷达处共获得 $N_s$ 次有效观测，并且 $N_r$ 不小于目标要求的最小测站数量 $M_s^{\min}$，且 $N_s$ 不小于目标要求的最小有效观测次数 $N_s^{\min}$，则称目标 $s$ 为有效观测目标。
-}
-
-目标函数采用两阶段建模方式，第一阶段最大化加权有效观测目标数，第二阶段在保证主目标不变的前提下最小化雷达观测弧段总数：
-
-\paragraph{第一阶段目标函数：}
+\subsubsection{第一阶段目标函数}
 $$
     \max J_1 = \sum_{s \in S} w_s \cdot y_s
 $$
@@ -113,49 +115,122 @@ $$
     \item $y_s$：二值变量，表示目标 $s$ 是否为有效观测目标。
 \end{itemize}
 
-\paragraph{第二阶段目标函数：}
+\subsubsection{第二阶段目标函数}
 $$
     \min J_2 = \sum_{r \in R}\sum_{s \in S}\sum_{a \in A_{r,s}} x_{r,s,a}
 $$
-
 该两阶段目标函数设计确保了模型在优先保障高权重目标的前提下，尽可能节省雷达资源，提高系统整体效率。
 
-\subsubsection{约束条件}
-
-\paragraph{雷达观测容量约束}\
-
+\subsection{约束条件}
+\subsubsection{雷达观测容量约束}
 每部雷达在任一时刻最多只能同时观测 $C_r$ 个目标。考虑离散时间索引 $t \in T$，有：
 $$
     \sum_{s \in S} \sum_{a \in A_{r,s}^t} x_{r,s,a} \leq C_r, \quad \forall r \in R,\ \forall t \in T
 $$
 其中：
 \begin{itemize}
-    \item $A_{r,s}^t$：时刻 $t$ 时，雷达 $r$ 可用于观测目标 $s$ 的弧段集合
-    \item $T$：时间步长集合
+    \item $A_{r,s}^t$：时刻 $t$ 时，雷达 $r$ 可用于观测目标 $s$ 的弧段集合；
+    \item $T$：时间步长集合。
 \end{itemize}
 
-\paragraph{目标有效性判定约束（逻辑约束）}\
+\subsubsection{单次观测时长约束}
+对于每个弧段 $(r, s, a)$，如果其持续时间小于目标 $s$ 所需的最小观测时间 $T_s^{\min}$，则禁止使用该弧段：
+$$
+    x_{r,s,a} = 0, \quad \text{if } \Delta t_{r,s,a} < T_s^{\min}
+$$
+其中 $\Delta t_{r,s,a}$ 是弧段 $(r, s, a)$ 的持续时间。
 
-利用中间变量辅助建模，通过观测决策 $x_{r,s,a}$ 与弧段持续时间 $t_{r,s,a}$ 的乘积累加可得目标有效观测时长，再结合目标对观测数量和测站的要求，判定 $y_s$。
+\subsubsection{目标有效性判定约束}
+利用中间变量辅助建模，通过观测决策 $x_{r,s,a}$ 与弧段持续时间 $\Delta t_{r,s,a}$ 的乘积累加可得目标有效观测时长，再结合目标对观测数量和测站的要求，判定 $y_s$。
 
-以上构成了完整的多雷达-多目标探测任务规划模型。
+1. 统计目标 $s$ 被多少个不同的雷达观测过：
+$$
+    O_r(s) = \sum_{a \in A_{r,s}} x_{r,s,a}, \quad \forall r \in R,\ s \in S
+$$
+其中 $O_r(s)$ 表示雷达 $r$ 对目标 $s$ 的有效观测次数。
+
+2. 统计雷达数量：
+$$
+    N_r(s) = \sum_{r \in R} z_{r,s}, \quad \text{where } z_{r,s} = 
+    \begin{cases}
+        1, & \text{if } O_r(s) \geq 1 \\
+        0, & \text{otherwise}
+    \end{cases}
+$$
+其中 $z_{r,s}$ 是一个辅助二值变量，表示雷达 $r$ 是否对目标 $s$ 有过有效观测。
+
+3. 判断目标是否为有效观测目标：
+$$
+    y_s = 
+    \begin{cases}
+        1, & \text{if } N_r(s) \geq M_s^{\min} \text{ and } \sum_{r \in R} \sum_{a \in A_{r,s}} x_{r,s,a} \geq N_s^{\min} \\
+        0, & \text{otherwise}
+    \end{cases}
+$$
+其中：
+\begin{itemize}
+    \item $M_s^{\min}$：目标 $s$ 所需的最小观测测站数；
+    \item $N_s^{\min}$：目标 $s$ 所需的最小有效观测次数。
+\end{itemize}
+
+\subsubsection{关于分阶段求解的说明}
+本模型采用两阶段优化策略进行求解，旨在在保障任务完成度的前提下优化资源使用效率。具体流程如下：
+
+\paragraph{第一阶段：最大化加权有效观测目标数}\
+
+首先求解以下整数规划问题：
+$$
+    \max J_1 = \sum_{s \in S} w_s \cdot y_s
+$$
+其中 $w_s$ 表示目标 $s$ 的优先级权重，$y_s$ 是一个布尔变量，表示目标 $s$ 是否为有效观测目标。
+
+该阶段的目标是尽可能多地覆盖高优先级目标，确保整体任务完成度达到最优。
+
+\paragraph{第二阶段：最小化雷达观测弧段数量}\
+
+在第一阶段求得最优值 $J_1^*$ 后，添加如下硬性约束：
+$$
+    \sum_{s \in S} w_s \cdot y_s \geq J_1^* - \varepsilon
+$$
+其中 $\varepsilon$ 为一个小量（如 $10^{-6}$），用于防止浮点精度误差。
+
+在此约束下，重新设置目标函数为：
+$$
+    \min J_2 = \sum_{r \in R}\sum_{s \in S}\sum_{a \in A_{r,s}} x_{r,s,a}
+$$
+即最小化总的雷达观测弧段数量。
+
+\paragraph{逻辑解释}\
+
+第一阶段确保了任务完成度（尤其是高优先级目标）的最大化；
+添加的约束保证了在第二阶段中任务完成度不会下降；
+第二阶段则在此前提下优化资源使用，减少不必要的观测弧段，提高系统整体效率。
+
+这种分阶段策略类似于“先保质再提效”的思想，在实际工程中具有良好的可操作性和稳定性。
+问题求解流程图如\autoref{figure:问题求解流程图}所示。
+\begin{figure}[h]\centering
+    \includegraphics[width=\columnwidth]{figures/问题求解流程图.png}
+    \caption{问题求解流程图}
+    \label{figure:问题求解流程图}
+\end{figure}
 
 \section{探测任务规划方法说明}
 \subsection{使用的求解器}
 本项目使用杉数科技提供的商业混合整数规划求解器 COPT（Cardinal Optimizer）。该求解器支持高性能求解大规模 MILP、MIQP 等优化问题，并支持 Python 接口与 Gurobi 接近。具体使用过程中，通过构建 COPT 模型对象、添加变量与约束、设置目标函数并调用 \texttt{model.solve()} 进行求解。
 
 \subsection{规划方法的基本原理}
-我们采用标准的混合整数规划方法对问题建模求解。初始时，程序从观测窗口表中构建弧段数据，并根据任务参数构建布尔决策变量。每轮迭代中，求解器根据目标函数最大化原则动态调整变量组合，直至收敛或达到终止条件。由于初期目标函数值往往较低，求解器通过迭代优化调度方案，逐步提升有效观测数量，提升资源利用率。
+我们采用整数规划方法对问题建模求解。初始时，程序从观测窗口表中构建弧段数据，并根据任务参数构建布尔决策变量。每轮迭代中，求解器根据目标函数动态调整变量组合，直至收敛或达到终止条件。由于初期目标函数值往往较低，求解器通过迭代优化调度方案，逐步提升有效观测数量，提升资源利用率。
 
 在建模过程中，我们引入了两阶段目标函数设计，先最大化加权有效观测目标数，然后在此基础上最小化总的雷达观测弧段数量。这种策略不仅提升了模型的求解效率，也增强了调度方案的可行性与鲁棒性。
 
 \section{探测任务方案生成结果}
 \subsection{仿真参数}
-在本次仿真实验中，我们选择了 193 颗星链卫星以及 40 部地面雷达（包含精密跟踪雷达和相控阵雷达）进行调度仿真。具体参数如\autoref{table:仿真参数设置}所示。
+\subsubsection{必做任务}
+在必做仿真实验中，我们选择了 193 颗星链卫星以及 40 部地面雷达（包含精密跟踪雷达和相控阵雷达）进行调度仿真。具体参数如\autoref{table:必做任务仿真参数设置}所示。
 \begin{table}[h]
     \centering
     \caption{仿真参数设置}
-    \label{table:仿真参数设置}
+    \label{table:必做任务仿真参数设置}
     \begin{tabular}{>{$}l<{$} | l | l}
         \hline
         \textbf{参数名称}  & \textbf{说明} & \textbf{数值}                    \\
@@ -166,46 +241,48 @@ $$
         M_s^{\min}     & 各目标所需最小测站数量 & 2 -- 3                         \\
         N_s^{\min}     & 各目标最小有效观测次数 & 4 -- 6                         \\
         C_r            & 各雷达的同时观测容量  & 1（精密跟踪）或 80（相控阵）               \\
+        \omega_s            & 各目标的优先级  & 6--10               \\
         \hline
     \end{tabular}
 \end{table}
-
-\subsection{探测任务方案结果}
-在进行混合整数规划求解后，获得了一组可行的观测任务分配方案。\autoref{tab:schedule_summary}是其中部分雷达-目标观测计划摘要（表格仅展示一部分结果）。
-
-此外，我们运用HTML的形式，能够选择想要展示的方式，展示任务分配表格和任务甘特图。单个测站的甘特图如\autoref{figure:102测站分配的任务甘特图}所示。
-单个目标被分配的观测任务如\autoref{figure:63411目标被分配的任务甘特图}所示。HTML网页操作界面如\autoref{figure:网页界面示意}所示。
-\begin{figure}[h]\centering
-    \includegraphics[width=\columnwidth]{figures/102测站.png}
-    \caption{102测站分配的任务甘特图}
-    \label{figure:102测站分配的任务甘特图}
-\end{figure}
-\begin{figure}[h]\centering
-    \includegraphics[width=\columnwidth]{figures/63411目标.png}
-    \caption{63411目标被分配的任务甘特图}
-    \label{figure:63411目标被分配的任务甘特图}
-\end{figure}
-\begin{figure}[h]\centering
-    \includegraphics[width=\columnwidth]{figures/网页界面示意.png}
-    \caption{网页界面示意}
-    \label{figure:网页界面示意}
-\end{figure}
-
-\section{探测任务方案评估}
-本节将从以下几个方面对探测任务调度方案进行评估：
-\begin{itemize}
-    \item {目标覆盖效果}：统计有效观测目标的数量及覆盖率，评估调度方案是否满足任务需求；
-    \item {资源利用效率}：通过雷达观测弧段总数评估雷达资源的使用效率；
-    \item {优先级响应程度}：按优先级统计各层级目标的覆盖率，验证模型是否合理响应优先级设定；
-    \item {计算性能表现}：评估模型求解时间、收敛速度及稳定性。
-\end{itemize}
-
-评估结果如\autoref{tab:results_summary}所示。模型在优先保障高权重目标的前提下，仍能兼顾大量中低优先级目标的观测需求，体现了良好的任务协调能力。此外，雷达资源利用较为紧凑，观测弧段总数控制在合理范围内，表明模型具有较高的资源调度效率。
+\subsubsection{选做任务}
+在选做仿真实验中，我们选择了 5000 颗卫星以及 40 部地面雷达（包含精密跟踪雷达和相控阵雷达）进行调度仿真。具体参数如\autoref{table:选做任务仿真参数设置}所示。
 \begin{table}[h]
     \centering
-    \caption{探测任务规划求解结果统计}
-    \label{tab:results_summary}
-    \begin{tabular}{ll}
+    \caption{仿真参数设置}
+    \label{table:选做任务仿真参数设置}
+    \begin{tabular}{>{$}l<{$} | l | l}
+        \hline
+        \textbf{参数名称}  & \textbf{说明} & \textbf{数值}                    \\
+        \hline
+        \Delta t       & 时间步长        & 1\,\text{min}                  \\
+        T_{\text{sim}} & 仿真总时长       & 1440\,\text{min}（1天）           \\
+        T_s^{\min}     & 各目标最小观测时长   & 3\,\text{min} -- 6\,\text{min} \\
+        M_s^{\min}     & 各目标所需最小测站数量 & 2 -- 3                         \\
+        N_s^{\min}     & 各目标最小有效观测次数 & 3 -- 4                         \\
+        C_r            & 各雷达的同时观测容量  & 1（精密跟踪）或 80（相控阵）               \\
+        \omega_s            & 各目标的优先级  & 1--5               \\
+        \hline
+    \end{tabular}
+\end{table}
+\subsection{探测任务方案结果}
+在进行混合整数规划求解后，获得了一组可行的观测任务分配方案。\autoref{tab:schedule_summary}是必做任务的部分雷达-目标观测计划摘要。此外，我们运用HTML的形式，能够选择想要展示的方式，展示任务分配表格和任务甘特图。单个测站的甘特图如\autoref{figure:102测站分配的任务甘特图}所示。单个目标被分配的观测任务如\autoref{figure:63411目标被分配的任务甘特图}所示。HTML网页操作界面如\autoref{figure:网页界面示意}所示。
+\begin{figure}[htbp]\centering
+	\begin{minipage}[b]{0.49\columnwidth}\centering
+		\includegraphics[width=\linewidth]{figures/102测站.png}\subcaption{102测站分配的任务甘特图}\label{figure:102测站分配的任务甘特图}
+	\end{minipage}
+	\begin{minipage}[b]{0.49\columnwidth}\centering
+		\includegraphics[width=\linewidth]{figures/63411目标.png}\subcaption{63411目标被分配的任务甘特图}\label{figure:63411目标被分配的任务甘特图}
+	\end{minipage}
+	\caption{网页界面示意}\label{figure:网页界面示意}
+\end{figure}
+\subsubsection{必做任务}
+在必做任务中，仅有188颗目标星在任务时间范围内有可用观测弧段，故至多可以覆盖188颗星。所以结果达成了100\%覆盖率。
+\begin{table}[h]
+    \centering
+    \caption{探测任务规划必做任务求解结果统计}
+    \label{tab:探测任务规划必做任务求解结果统计}
+    \begin{tabularx}{0.8\columnwidth}{Xl}
         \toprule
         \textbf{指标}        & \textbf{数值}      \\
         \midrule
@@ -218,23 +295,44 @@ $$
         中优先级目标覆盖率（优先级 > 6） & 96/99 → 96.97\%  \\
         低优先级目标覆盖率          & 29/29 → 100.00\% \\
         \bottomrule
-    \end{tabular}
+    \end{tabularx}
 \end{table}
+
+\subsubsection{选做任务}
+在必做任务中，仅有188颗目标星在任务时间范围内有可用观测弧段，故至多可以覆盖188颗星。所以结果达成了100\%覆盖率。
+\begin{table}[h]
+    \centering
+    \caption{探测任务规划选做任务求解结果统计}
+    \label{tab:探测任务规划选做任务求解结果统计}
+    \begin{tabularx}{0.8\columnwidth}{Xl}
+        \toprule
+        \textbf{指标}        & \textbf{数值}      \\
+        \midrule
+        最终目标值（加权有效观测目标数）   & 12914.0           \\
+        最终雷达观测弧段总数         & 15077.0            \\
+        总目标数量              & 5000              \\
+        有效观测目标数量           & 4306              \\
+        覆盖率                & 86.12\%          \\
+        高优先级目标覆盖率（优先级 > 3） & 548/621→ 88.24\%  \\
+        中优先级目标覆盖率（优先级 > 2） & 2152/2516 → 85.53\%  \\
+        低优先级目标覆盖率          & 1606/1863 → 86.21\% \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{探测任务方案评估}
+本节将从以下几个方面对探测任务调度方案进行评估：
+\begin{itemize}
+    \item {目标覆盖效果}：统计有效观测目标的数量及覆盖率，评估调度方案是否满足任务需求；
+    \item {资源利用效率}：通过雷达观测弧段总数评估雷达资源的使用效率；
+    \item {优先级响应程度}：按优先级统计各层级目标的覆盖率，验证模型是否合理响应优先级设定；
+    \item {计算性能表现}：评估模型求解时间、收敛速度及稳定性。
+\end{itemize}
+
+评估结果如\autoref{tab:探测任务规划必做任务求解结果统计}和\autoref{tab:探测任务规划选做任务求解结果统计}所示。模型在优先保障高权重目标的前提下，仍能兼顾大量中低优先级目标的观测需求，体现了良好的任务协调能力。此外，雷达资源利用较为紧凑，观测弧段总数控制在合理范围内，表明模型具有较高的资源调度效率。
 
 \section{拓展思考}
 通过本次“探测任务规划”与前期“近距离观测轨迹规划”的仿真实践，我对航天任务规划问题有了更深入的理解。航天任务规划本质上是一个复杂的资源调度与多目标优化问题，其核心在于如何在有限的时间与设备资源下，最大化任务收益并保障任务可行性。
-
-在任务评估方面，我认为应从以下几个维度开展：
-
-\begin{itemize}
-    \item \textbf{任务完成度}：是否满足所有硬性约束（如观测次数、测站数量、时间限制等）；
-    \item \textbf{资源效率}：是否高效利用了可用资源，避免浪费；
-    \item \textbf{优先级响应}：是否按照设定的优先级顺序执行任务；
-    \item \textbf{鲁棒性与容错性}：在突发情况下能否快速调整调度方案；
-    \item \textbf{可扩展性}：模型是否易于适应更大规模或更多任务场景。
-\end{itemize}
-
-未来可进一步引入不确定性因素（如天气干扰、设备故障等），构建更具现实意义的鲁棒调度模型，并探索强化学习等智能算法在任务规划中的应用潜力。
 
 \begin{sidewaystable}[h]
     \centering
