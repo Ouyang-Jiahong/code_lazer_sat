@@ -2,6 +2,43 @@
 \usepackage[a4paper,margin=2.5cm]{geometry}
 \include{package}
 \usepackage{rotating}
+
+% ----------------------------
+% 代码显示相关宏包
+% ----------------------------
+\usepackage{listings}     % 代码高亮
+
+% ----------------------------
+% 设置代码样式
+% ----------------------------
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{backcolor}{rgb}{0.95,0.95,0.95}
+\definecolor{codeblue}{rgb}{0.2,0.2,0.6}
+\definecolor{keywordcolor}{rgb}{0.1,0.1,0.6}
+\definecolor{stringcolor}{rgb}{0.58,0,0.1}
+
+\lstdefinestyle{pythonstyle}{
+    backgroundcolor=\color{backcolor},   
+    commentstyle=\color{codegray}\itshape,
+    keywordstyle=\color{keywordcolor}\bfseries,
+    stringstyle=\color{stringcolor},
+    numberstyle=\tiny\color{gray},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,                     
+    captionpos=b,                        
+    keepspaces=true,
+    numbers=left,                        
+    numbersep=5pt,                       
+    showspaces=false,                    
+    showstringspaces=false,
+    showtabs=false,                      
+    tabsize=4,
+    language=Python
+}
+
+% 设置默认样式
+\lstset{style=pythonstyle}
+
 \title{程序说明}
 \author{欧阳嘉鸿}
 \date{\today}
@@ -256,4 +293,15 @@ $$
         \hline
     \end{tabular}
 \end{sidewaystable}
+
+\section*{附录: Python 代码}
+\subsection*{A.1 数据模块}
+\lstinputlisting[language=Python,caption={数据模块}]{../data.py}
+
+\subsection*{A.2 数据处理模块}
+\lstinputlisting[language=Python,caption={数据处理模块}]{../data_processing_module.py}
+
+\subsection*{A.3 结果展示模块}
+\lstinputlisting[language=Python,caption={结果展示模块}]{../result_show_app.py}
+
 \end{document}
