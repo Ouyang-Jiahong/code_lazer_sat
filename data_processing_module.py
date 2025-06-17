@@ -274,10 +274,10 @@ if model.status == COPT.OPTIMAL:
 
     for s in targets:
         weight = priority_weights[s]
-        if weight >= 9:
+        if weight >= 5:
             high_priority_count += 1
             high_priority_effective += round(y[s].x)
-        elif weight >= 7:
+        elif weight >= 3:
             medium_priority_count += 1
             medium_priority_effective += round(y[s].x)
         else:
@@ -287,10 +287,10 @@ if model.status == COPT.OPTIMAL:
     print("\n【按优先级统计覆盖率】")
     if high_priority_count > 0:
         print(
-            f"高优先级目标覆盖率（优先级大于8）: {high_priority_effective}/{high_priority_count} -> {high_priority_effective / high_priority_count:.2%}")
+            f"高优先级目标覆盖率（优先级大于3）: {high_priority_effective}/{high_priority_count} -> {high_priority_effective / high_priority_count:.2%}")
     if medium_priority_count > 0:
         print(
-            f"中优先级目标覆盖率（优先级大于6）: {medium_priority_effective}/{medium_priority_count} -> {medium_priority_effective / medium_priority_count:.2%}")
+            f"中优先级目标覆盖率（优先级大于2）: {medium_priority_effective}/{medium_priority_count} -> {medium_priority_effective / medium_priority_count:.2%}")
     if low_priority_count > 0:
         print(
             f"低优先级目标覆盖率: {low_priority_effective}/{low_priority_count} -> {low_priority_effective / low_priority_count:.2%}")

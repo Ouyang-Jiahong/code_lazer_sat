@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from astropy.time import Time
 import scipy.io as sio
@@ -6,8 +7,10 @@ import scipy.io as sio
 # 数据加载阶段
 # ----------------------------
 sensor_data = pd.read_excel("simData/sensorData.xlsx")  # 测站参数表
-require_data = pd.read_excel("simData/requireData.xlsx")  # 任务需求表
-usable_arcs = sio.loadmat("simData/usableArcs.mat")["usableArcs"]  # 可见弧段数据
+# require_data = pd.read_excel("simData/requireData.xlsx")  # 任务需求表
+require_data = pd.read_excel("simData/requireData5000.xlsx")  # 任务需求表
+# usable_arcs = sio.loadmat("simData/usableArcs.mat")["usableArcs"]  # 可见弧段数据
+usable_arcs = np.array(sio.loadmat("simData/AllArcChain_A.mat")["AllArcChain_A"])  # 可见弧段数据
 simDate = sio.loadmat("simData/simDate.mat")["simDate"]  # 仿真时间节点（UTC）
 
 # ----------------------------
