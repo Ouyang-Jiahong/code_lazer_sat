@@ -30,6 +30,49 @@ priority_weights = require_data["优先级(数值越大，优先级越高)"].val
 
 start_time = Time("2021-10-14T04:00:00", format='isot', scale='utc')  # 仿真开始时间
 
+def split_arc_windows_exact(radar_target_vis_dict, simDate, required_observation_time, sat_id_to_index, overlap_ratio=0.5):
+    """
+    用整数索引滑窗重叠切割弧段，每个子弧段持续时间等于最小观测时间。
+    overlap_ratio: 相邻子弧段的重叠比例（0~1），如0.5表示滑动窗口步长为min_obs_time的一半。
+    """
+    new_dict = {}
+    sim_times = simDate[0]
+    for (radar_id, sat_id), windows in radar_target_vis_dict.items():
+        s_idx = sat_id_to_index[sat_id]
+        min_obs_time = int(round(required_observation_time[s_idx]))
+        step = max(1, int(round(min_obs_time * (1 - overlap_ratio))))
+        new_windows = []
+        for (start_idx, end_idx, duration) in windows:
+            if end_idx <= start_idx:
+                continue
+            t0 = int(round(sim_times[start_idx]))
+            t1 = int(round(sim_times[end_idx]))
+            if t1 - t0 < min_obs_time:
+                new_windows.append((start_idx, end_idx, int(round(duration))))
+                continue
+            pos = t0
+            while pos + min_obs_time <= t1:
+                seg_start = pos
+                seg_end = seg_start + min_obs_time
+                # 找到最近的索引
+                seg_start_idx = int(np.searchsorted(sim_times, seg_start, side='left'))
+                seg_end_idx = int(np.searchsorted(sim_times, seg_end, side='right')) - 1
+                if seg_end_idx > end_idx:
+                    seg_end_idx = end_idx
+                if seg_start_idx < start_idx:
+                    seg_start_idx = start_idx
+                seg_duration = int(round(sim_times[seg_end_idx] - sim_times[seg_start_idx]))
+                # 只保留等于最小观测时间的子弧段
+                if seg_duration == min_obs_time:
+                    new_windows.append((seg_start_idx, seg_end_idx, seg_duration))
+                pos += step
+        if not new_windows:
+            # 保底：保留原弧段
+            for (start_idx, end_idx, duration) in windows:
+                new_windows.append((start_idx, end_idx, int(round(duration))))
+        new_dict[(radar_id, sat_id)] = new_windows
+    return new_dict
+
 # ----------------------------
 # 构建雷达-目标可见性字典
 # 键为 (radar_id, sat_id)，值为该组合下所有可见时间窗口及对应时长（分钟）
@@ -63,4 +106,15 @@ for i in range(len(usable_arcs[0])):
     # duration = window[2]         # 弧段持续时间（分钟）
     radar_target_vis_dict[(radar_id, sat_id)] = visible_windows
 
+# 构建目标编号到索引的映射
+sat_id_to_index = {}
+for idx, sat_id in enumerate(require_data["目标编号"]):
+    sat_id_to_index[sat_id] = idx
+
 print("[data.py] 数据预处理完成，radar_target_vis_dict 已构建。")
+
+# ----------- 新增：以中心优先切割弧段 -----------
+radar_target_vis_dict = split_arc_windows_exact(
+    radar_target_vis_dict, simDate, required_observation_time, sat_id_to_index, overlap_ratio=0.5
+)
+print(f"[data.py] 已按中心优先、每目标最小观测时间切割弧段。")
