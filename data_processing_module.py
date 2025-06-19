@@ -168,15 +168,12 @@ for s in targets:
 # 5. 判断目标是否为有效观测目标
 for s in targets:
     # 条件1：观测雷达数 ≥ M_s^min
-    model.addConstr(observed_radars[s] >= required_stations[s] * y[s], name=f"require_radars_{s}")
+    model.addConstr(observed_radars[s] == required_stations[s] * y[s], name=f"require_radars_{s}")
     # 条件2：观测次数 ≥ N_s^min
-    model.addConstr(observed_arcs[s] >= required_arc_count[s] * y[s], name=f"require_arcs_{s}")
+    model.addConstr(observed_arcs[s] == required_arc_count[s] * y[s], name=f"require_arcs_{s}")
 
 # ----------------------------
 # 设置目标函数
-# ----------------------------
-# ----------------------------
-# 第一阶段：最大化加权有效观测目标数
 # ----------------------------
 obj_main = cp.quicksum(priority_weights[s] * y[s] for s in targets)
 model.setObjective(obj_main, sense=COPT.MAXIMIZE)
@@ -187,42 +184,13 @@ model.setParam(COPT.Param.TimeLimit, 3600)  # 设置最大求解时间（秒）
 # 求解第一阶段
 model.solve()
 
-if model.status == COPT.OPTIMAL:
-    best_coverage = model.objval
-    print(f"[第一阶段] 主目标最优值为：{best_coverage}")
-
-    # ----------------------------
-    # 添加约束：保持主目标值不低于最优值
-    # ----------------------------
-    model.addConstr(obj_main >= best_coverage - 1e-6, name="Fix_Coverage")
-
-    # ----------------------------
-    # 第二阶段：最小化雷达观测弧段数量
-    # ----------------------------
-    total_obs = cp.quicksum(
-        x[r][s][a] for r in radars
-        for s in targets
-        for a in arc_indices.get((r, s), [])
-    )
-    model.setObjective(total_obs, sense=COPT.MINIMIZE)
-
-    # 继续求解第二阶段
-    model.solve()
-    minimum_arc_num = model.objval
-    if model.status == COPT.OPTIMAL:
-        print(f"[第二阶段] 最终雷达观测弧段总数为：{total_obs.getValue()}")
-    else:
-        print("未找到满足条件的更优观测调度方案。")
-else:
-    print("未找到可行解。")
-
 # ----------------------------
 # 输出结果
 # ----------------------------
 if model.status == COPT.OPTIMAL:
     print("求解成功！")
-    print(f"最终目标值（加权有效观测目标数）: {best_coverage}")
-    print(f"最终雷达观测弧段总数为：: {minimum_arc_num}")
+    print(f"最终目标值（加权有效观测目标数）: {model.objval}")
+    # print(f"最终雷达观测弧段总数为：: {minimum_arc_num}")
     schedule = []
     for r in radars:
         for s in targets:
