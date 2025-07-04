@@ -48,38 +48,6 @@
 \tableofcontents
 \newpage
 \section{探测任务规划问题建模}
-
-\subsection{数据结构与符号说明}
-在本模型中，主要涉及的集合、参数和变量如\autoref{table:主要数据结构与符号说明}所示。其中，弧段集合 $A_{r,s}$ 的生成依赖于观测窗口字典 \texttt{radar\_target\_vis\_dict}。该字典的键为测站-目标编号对 $(r,s)$，值为该测站可观测该目标的多个时间窗口，每个时间窗口用一个三元组 $(t_{\text{start}}, t_{\text{end}}, \Delta t)$ 表示，分别对应仿真起止时间点的索引与持续时长（分钟）。该结构最初由可见性分析模块根据轨道仿真生成，并经由 MATLAB 的 \texttt{usableArcs.mat} 文件导入。
-
-变量 \texttt{x[r][s][a]} 为核心的布尔决策变量，用于表示是否选择雷达 $r$ 在第 $a$ 个弧段上观测目标 $s$。该变量由 COPT 求解器在建模阶段创建，在求解后可通过 \texttt{x[r][s][a].x} 获取其值（0 或 1）。变量 \texttt{y[s]} 表示目标 $s$ 是否被有效观测（即满足其所有观测需求约束），是模型中用于综合评估任务完成情况的辅助变量。
-
-输入数据结构中，\texttt{sensor\_data} 与 \texttt{require\_data} 分别来自 Excel 文件 \texttt{sensorData.xlsx} 和 \texttt{requireData.xlsx}，字段对应关系如\autoref{tab:data-fields}所示。
-\begin{table}[H]
-    \centering
-    \caption{输入数据字段与模型变量的对应关系}
-    \label{tab:data-fields}
-    \begin{tabular}{lll}
-        \toprule
-        \textbf{数据字段来源}        & \textbf{字段名称}            & \textbf{模型中对应符号}      \\
-        \midrule
-        \texttt{sensor\_data}  & \texttt{雷达编号}            & 构建雷达集合 $R$            \\
-                               & \texttt{最大探测目标数}         & 各雷达最大观测能力 $C_r$       \\
-        \addlinespace
-        \texttt{require\_data} & \texttt{目标编号}            & 构建目标集合 $S$            \\
-                               & \texttt{需要的测站数量}         & 最小观测测站数 $M_s^{\min}$  \\
-                               & \texttt{需要的弧段数量}         & 最小观测弧段数 $N_s^{\min}$  \\
-                               & \texttt{需要的观测时间(min)}    & 最小累计观测时长 $T_s^{\min}$ \\
-                               & \texttt{优先级(数值越大，优先级越高)} & 优先级权重 $w_s$           \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-程序通过读取测站参数表 \texttt{sensorData.xlsx} 生成数据框 \texttt{sensor\_data}，其中字段 \texttt{sensor\_data["雷达编号"]} 提供每个测站的唯一标识，用于构建雷达集合 $R$；字段 \texttt{sensor\_data["最大探测目标数"]} 表示每个测站在任一时刻最多可同时观测的目标数，对应模型中的参数 $C_r$。任务需求表 \texttt{requireData.xlsx} 被加载为数据框 \texttt{require\_data}，记录每一个观测目标的基本属性及其观测需求：\texttt{require\_data["目标编号"]} 用于构建目标集合 $S$；\texttt{require\_data["需要的测站数量"]} 表示每个目标所需的最小观测测站数，记作 $M_s^{\min}$；\texttt{require\_data["需要的弧段数量"]} 表示所需的最小观测次数，记作 $N_s^{\min}$；\texttt{require\_data["需要的观测时间(min)"]} 是累计观测时长的最小值（单位为分钟），映射为 $T_s^{\min}$；而 \texttt{require\_data["优先级(数值越大，优先级越高)"]} 表示任务重要性，用于构建目标函数中的权重系数 $w_s$。
-
-此外，时间节点矩阵 \texttt{simDate} 是一个二维数组，表示整个仿真周期内的统一时间参考，供弧段时间索引定位与可视化模块使用。仿真起始时间 \texttt{start\_time} 用于构造 UTC 时间标签。通过模型求解后，遍历所有 \texttt{x[r][s][a]} 的值即可输出完整的调度方案，包括观测起止时间与分配的测站资源，适用于后续的任务下发与动态更新。
-
-\section{数学模型}
 本问题旨在为多个地面雷达调度多个空间目标的观测任务，实现有效资源分配并最大化任务完成度。
 
 \subsection{决策变量}
@@ -103,23 +71,15 @@ $$
 $$
 
 \subsection{目标函数}
-目标函数采用两阶段建模方式，第一阶段最大化加权有效观测目标数，第二阶段在保证主目标不变的前提下最小化雷达观测弧段总数。
-
-\subsubsection{第一阶段目标函数}
+目标函数为最大化加权有效观测目标数：
 $$
-    \max J_1 = \sum_{s \in S} w_s \cdot y_s
+    \max J = \sum_{s \in S} w_s \cdot y_s
 $$
 其中：
 \begin{itemize}
     \item $w_s$：目标 $s$ 的权重（优先级）；
     \item $y_s$：二值变量，表示目标 $s$ 是否为有效观测目标。
 \end{itemize}
-
-\subsubsection{第二阶段目标函数}
-$$
-    \min J_2 = \sum_{r \in R}\sum_{s \in S}\sum_{a \in A_{r,s}} x_{r,s,a}
-$$
-该两阶段目标函数设计确保了模型在优先保障高权重目标的前提下，尽可能节省雷达资源，提高系统整体效率。
 
 \subsection{约束条件}
 \subsubsection{雷达观测容量约束}
@@ -163,7 +123,7 @@ $$
 $$
     y_s = 
     \begin{cases}
-        1, & \text{if } N_r(s) \geq M_s^{\min} \text{ and } \sum_{r \in R} \sum_{a \in A_{r,s}} x_{r,s,a} \geq N_s^{\min} \\
+        1, & \text{if } N_r(s) = M_s^{\min} \text{ and } \sum_{r \in R} \sum_{a \in A_{r,s}} x_{r,s,a} = N_s^{\min} \\
         0, & \text{otherwise}
     \end{cases}
 $$
@@ -173,40 +133,59 @@ $$
     \item $N_s^{\min}$：目标 $s$ 所需的最小有效观测次数。
 \end{itemize}
 
-\subsubsection{关于分阶段求解的说明}
-本模型采用两阶段优化策略进行求解，旨在在保障任务完成度的前提下优化资源使用效率。具体流程如下：
+\subsection{程序说明}
+为了便于后续阅读和理解，下面列出了主要涉及的集合、参数和变量（如\autoref{table:主要数据结构与符号说明}所示）。其中，弧段集合 $A_{r,s}$ 的生成依赖于观测窗口字典 \texttt{radar\_target\_vis\_dict}。该字典的键为测站-目标编号对 $(r,s)$，值为该测站可观测该目标的多个时间窗口，每个时间窗口用一个三元组 $(t_{\text{start}}, t_{\text{end}}, \Delta t)$ 表示，分别对应仿真起止时间点的索引与持续时长（分钟）。该结构最初由可见性分析模块根据轨道仿真生成，并经由 MATLAB 的 \texttt{usableArcs.mat} 文件导入。
 
-\paragraph{第一阶段：最大化加权有效观测目标数}\
+变量 \texttt{x[r][s][a]} 为核心的布尔决策变量，用于表示是否选择雷达 $r$ 在第 $a$ 个弧段上观测目标 $s$。该变量由 COPT 求解器在建模阶段创建，在求解后可通过 \texttt{x[r][s][a].x} 获取其值（0 或 1）。变量 \texttt{y[s]} 表示目标 $s$ 是否被有效观测（即满足其所有观测需求约束），是模型中用于综合评估任务完成情况的辅助变量。
 
-首先求解以下整数规划问题：
-$$
-    \max J_1 = \sum_{s \in S} w_s \cdot y_s
-$$
-其中 $w_s$ 表示目标 $s$ 的优先级权重，$y_s$ 是一个布尔变量，表示目标 $s$ 是否为有效观测目标。
+输入数据结构中，\texttt{sensor\_data} 与 \texttt{require\_data} 分别来自 Excel 文件 \texttt{sensorData.xlsx} 和 \texttt{requireData.xlsx}，字段对应关系如\autoref{tab:data-fields}所示。
+\begin{table}[H]
+    \centering
+    \caption{输入数据字段与模型变量的对应关系}
+    \label{tab:data-fields}
+    \begin{tabular}{lll}
+        \toprule
+        \textbf{数据字段来源}        & \textbf{字段名称}            & \textbf{模型中对应符号}      \\
+        \midrule
+        \texttt{sensor\_data}  & \texttt{雷达编号}            & 构建雷达集合 $R$            \\
+                               & \texttt{最大探测目标数}         & 各雷达最大观测能力 $C_r$       \\
+        \addlinespace
+        \texttt{require\_data} & \texttt{目标编号}            & 构建目标集合 $S$            \\
+                               & \texttt{需要的测站数量}         & 最小观测测站数 $M_s^{\min}$  \\
+                               & \texttt{需要的弧段数量}         & 最小观测弧段数 $N_s^{\min}$  \\
+                               & \texttt{需要的观测时间(min)}    & 最小累计观测时长 $T_s^{\min}$ \\
+                               & \texttt{优先级(数值越大，优先级越高)} & 优先级权重 $w_s$           \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
-该阶段的目标是尽可能多地覆盖高优先级目标，确保整体任务完成度达到最优。
+程序通过读取测站参数表 \texttt{sensorData.xlsx} 生成数据框 \texttt{sensor\_data}，其中字段 \texttt{sensor\_data["雷达编号"]} 提供每个测站的唯一标识，用于构建雷达集合 $R$；字段 \texttt{sensor\_data["最大探测目标数"]} 表示每个测站在任一时刻最多可同时观测的目标数，对应模型中的参数 $C_r$。任务需求表 \texttt{requireData.xlsx} 被加载为数据框 \texttt{require\_data}，记录每一个观测目标的基本属性及其观测需求：\texttt{require\_data["目标编号"]} 用于构建目标集合 $S$；\texttt{require\_data["需要的测站数量"]} 表示每个目标所需的最小观测测站数，记作 $M_s^{\min}$；\texttt{require\_data["需要的弧段数量"]} 表示所需的最小观测次数，记作 $N_s^{\min}$；\texttt{require\_data["需要的观测时间(min)"]} 是累计观测时长的最小值（单位为分钟），映射为 $T_s^{\min}$；而 \texttt{require\_data["优先级(数值越大，优先级越高)"]} 表示任务重要性，用于构建目标函数中的权重系数 $w_s$。
 
-\paragraph{第二阶段：最小化雷达观测弧段数量}\
+此外，时间节点矩阵 \texttt{simDate} 是一个二维数组，表示整个仿真周期内的统一时间参考，供弧段时间索引定位与可视化模块使用。仿真起始时间 \texttt{start\_time} 用于构造 UTC 时间标签。通过模型求解后，遍历所有 \texttt{x[r][s][a]} 的值即可输出完整的调度方案，包括观测起止时间与分配的测站资源，适用于后续的任务下发与动态更新。
 
-在第一阶段求得最优值 $J_1^*$ 后，添加如下硬性约束：
-$$
-    \sum_{s \in S} w_s \cdot y_s \geq J_1^* - \varepsilon
-$$
-其中 $\varepsilon$ 为一个小量（如 $10^{-6}$），用于防止浮点精度误差。
+\subsection{可见弧段预处理与切割策略}
+为了更精细地调度雷达观测资源，在模型构建前对原始可见弧段进行了切割处理。由于某些长持续时间的可见弧段可能包含多个可独立使用的子弧段，我们采用滑动窗口重叠切割方法（Overlap-based Sliding Window Splitting），将每个原始弧段划分为若干个等长度的小弧段，其持续时间等于目标所需的最小观测时间 $T_s^{\min}$，并保留一定比例的重叠以提升调度灵活性。
 
-在此约束下，重新设置目标函数为：
-$$
-    \min J_2 = \sum_{r \in R}\sum_{s \in S}\sum_{a \in A_{r,s}} x_{r,s,a}
-$$
-即最小化总的雷达观测弧段数量。
+具体实现如下：  
+对于任意一个原始弧段 $(t_{\text{start}}, t_{\text{end}}, \Delta t)$，若其总时长大于或等于该目标所需最小观测时间 $T_s^{\min}$，则使用步长为 $T_s^{\min} \cdot (1 - \texttt{overlap\_ratio})$ 的滑动窗口进行切割。默认情况下设置 $\texttt{overlap\_ratio}=0.5$，即相邻子弧段之间有50\%的时间重叠。这样可以确保即使某个时间段被多个目标竞争，也存在足够的冗余弧段可供选择。如\autoref{fig:弧段切割示意图}所示。
 
-\paragraph{逻辑解释}\
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/弧段切割示意图.png}
+    \caption{弧段切割示意图}
+    \label{fig:弧段切割示意图}
+\end{figure}
 
-第一阶段确保了任务完成度（尤其是高优先级目标）的最大化；
-添加的约束保证了在第二阶段中任务完成度不会下降；
-第二阶段则在此前提下优化资源使用，减少不必要的观测弧段，提高系统整体效率。
+切割后的子弧段需满足以下条件：  
+\begin{itemize}
+    \item 持续时间严格等于 $T_s^{\min}$；
+    \item 起止时间索引对应仿真时间节点数组 \texttt{simDate}；
+    \item 若原弧段不足以生成一个完整子弧段，则保留原弧段不变。
+\end{itemize}
 
-这种分阶段策略类似于“先保质再提效”的思想，在实际工程中具有良好的可操作性和稳定性。
+通过此方法，系统能更好地适应多目标并发观测的需求，同时避免因弧段过长而浪费雷达资源。切割后的新弧段集合被存储在字典结构 \texttt{radar\_target\_vis\_dict} 中，并用于后续的模型构建与求解。
+
+\subsection{问题求解流程}
 问题求解流程图如\autoref{figure:问题求解流程图}所示。
 \begin{figure}[h]\centering
     \includegraphics[width=\columnwidth]{figures/问题求解流程图.png}
@@ -219,9 +198,7 @@ $$
 本项目使用杉数科技提供的商业混合整数规划求解器 COPT（Cardinal Optimizer）。该求解器支持高性能求解大规模 MILP、MIQP 等优化问题，并支持 Python 接口与 Gurobi 接近。具体使用过程中，通过构建 COPT 模型对象、添加变量与约束、设置目标函数并调用 \texttt{model.solve()} 进行求解。
 
 \subsection{规划方法的基本原理}
-我们采用整数规划方法对问题建模求解。初始时，程序从观测窗口表中构建弧段数据，并根据任务参数构建布尔决策变量。每轮迭代中，求解器根据目标函数动态调整变量组合，直至收敛或达到终止条件。由于初期目标函数值往往较低，求解器通过迭代优化调度方案，逐步提升有效观测数量，提升资源利用率。
-
-在建模过程中，我们引入了两阶段目标函数设计，先最大化加权有效观测目标数，然后在此基础上最小化总的雷达观测弧段数量。这种策略不仅提升了模型的求解效率，也增强了调度方案的可行性与鲁棒性。
+我们采用整数规划方法对问题建模求解。初始时，程序从观测窗口表中构建弧段数据，并根据任务参数构建布尔决策变量。每轮迭代中，求解器根据目标函数动态调整变量组合，直至收敛或达到终止条件。由于初期目标函数值往往较低，求解器通过迭代优化调度方案，逐步提升有效观测数量，提升资源利用率。在建模过程中，我们将目标函数设置为最大化加权有效观测目标数。
 
 \section{探测任务方案生成结果}
 \subsection{仿真参数}
@@ -246,7 +223,7 @@ $$
     \end{tabular}
 \end{table}
 \subsubsection{选做任务}
-在选做仿真实验中，我们选择了 5000 颗卫星以及 40 部地面雷达（包含精密跟踪雷达和相控阵雷达）进行调度仿真。具体参数如\autoref{table:选做任务仿真参数设置}所示。
+在选做仿真实验中，我们选择了 40 部地面雷达（包含精密跟踪雷达和相控阵雷达），分别选择了 5000 颗或11113颗卫星进行调度仿真。具体参数如\autoref{table:选做任务仿真参数设置}所示。
 \begin{table}[h]
     \centering
     \caption{仿真参数设置}
@@ -276,8 +253,10 @@ $$
 	\end{minipage}
 	\caption{网页界面示意}\label{figure:网页界面示意}
 \end{figure}
+
+三组数据都求出了最优解。
 \subsubsection{必做任务}
-在必做任务中，仅有188颗目标星在任务时间范围内有可用观测弧段，故至多可以覆盖188颗星。所以结果达成了100\%覆盖率。第一阶段求解时间为1.35秒，第二阶段求解时间为2.6秒，总时间为4.05秒，变量数量为312960。
+在必做任务中，仅有188颗目标星在任务时间范围内有可用观测弧段，故至多可以覆盖188颗星。所以结果达成了100\%覆盖率。求解时间为1.22秒，变量数量为：41060个0/1变量，386个整数变量。
 \begin{table}[h]
     \centering
     \caption{探测任务规划必做任务求解结果统计}
@@ -287,7 +266,6 @@ $$
         \textbf{指标}        & \textbf{数值}      \\
         \midrule
         最终目标值（加权有效观测目标数）   & 1476.0           \\
-        最终雷达观测弧段总数         & 654.0            \\
         总目标数量              & 193              \\
         有效观测目标数量           & 188              \\
         覆盖率                & 97.41\%          \\
@@ -299,23 +277,42 @@ $$
 \end{table}
 
 \subsubsection{选做任务}
-在选做任务中，仅有4313颗目标星在任务时间范围内有可用观测弧段，故至多可以覆盖4313颗星。最终结果达成了99.84\%覆盖率。第一阶段求解时间为XXX秒，第二阶段求解时间为XXX秒，总时间为XXX秒，变量数量为8593250。
+在5000颗卫星中，仅有4313颗目标星在任务时间范围内有可用观测弧段，故至多可以覆盖4313颗星。最终覆盖了有效目标4306个，覆盖率86.12\%。求解时间为13.89秒，变量数量为：0/1型变量988417个，整数变量10000个。
 \begin{table}[h]
     \centering
-    \caption{探测任务规划选做任务求解结果统计}
-    \label{tab:探测任务规划选做任务求解结果统计}
+    \caption{探测任务规划选做任务1求解结果统计}
+    \label{tab:探测任务规划选做任务1求解结果统计}
     \begin{tabularx}{0.8\columnwidth}{Xl}
         \toprule
         \textbf{指标}        & \textbf{数值}      \\
         \midrule
         最终目标值（加权有效观测目标数）   & 12914.0           \\
-        最终雷达观测弧段总数         & 15077.0            \\
         总目标数量              & 5000              \\
         有效观测目标数量           & 4306              \\
         覆盖率                & 86.12\%          \\
         高优先级目标覆盖率（优先级 > 3） & 548/621→ 88.24\%  \\
         中优先级目标覆盖率（优先级 > 2） & 2152/2516 → 85.53\%  \\
         低优先级目标覆盖率          & 1606/1863 → 86.21\% \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+在11113颗卫星中，仅有10323目标星在任务时间范围内有可用观测弧段，故至多可以覆盖10323颗星。最终覆盖了有效目标10316个，覆盖率92.83\%。求解时间为584.81秒，变量数量为：0/1型变量2338896个，整数变量22226个。经过COPT求解器优化，问题的变量数量被优化为：0/1型变量678131个，整数变量1189个。
+\begin{table}[h]
+    \centering
+    \caption{探测任务规划选做任务2求解结果统计}
+    \label{tab:探测任务规划选做任务2求解结果统计}
+    \begin{tabularx}{0.8\columnwidth}{Xl}
+        \toprule
+        \textbf{指标}        & \textbf{数值}      \\
+        \midrule
+        最终目标值（加权有效观测目标数）   & 30939.0           \\
+        总目标数量              & 11113              \\
+        有效观测目标数量           & 10316              \\
+        覆盖率                & 92.83\%          \\
+        高优先级目标覆盖率（优先级 > 3） & 1294/1383 -> 93.56\%  \\
+        中优先级目标覆盖率（优先级 > 2） & 5150/5561 -> 92.61\%  \\
+        低优先级目标覆盖率          & 3872/4169 -> 92.88\% \\
         \bottomrule
     \end{tabularx}
 \end{table}
@@ -329,10 +326,42 @@ $$
     \item {计算性能表现}：评估模型求解时间、收敛速度及稳定性。
 \end{itemize}
 
-评估结果如\autoref{tab:探测任务规划必做任务求解结果统计}和\autoref{tab:探测任务规划选做任务求解结果统计}所示。模型在优先保障高权重目标的前提下，仍能兼顾大量中低优先级目标的观测需求，体现了良好的任务协调能力。此外，雷达资源利用较为紧凑，观测弧段总数控制在合理范围内，表明模型具有较高的资源调度效率。
+评估结果如\autoref{tab:探测任务规划必做任务求解结果统计}、\autoref{tab:探测任务规划选做任务1求解结果统计}和\autoref{tab:探测任务规划选做任务2求解结果统计}所示。模型在优先保障高权重目标的前提下，仍能兼顾大量中低优先级目标的观测需求，体现了良好的任务协调能力。此外，雷达资源利用较为紧凑，观测弧段总数控制在合理范围内，表明模型具有较高的资源调度效率。
 
 \section{拓展思考}
-通过本次“探测任务规划”与前期“近距离观测轨迹规划”的仿真实践，我对航天任务规划问题有了更深入的理解。航天任务规划本质上是一个复杂的资源调度与多目标优化问题，其核心在于如何在有限的时间与设备资源下，最大化任务收益并保障任务可行性。
+
+通过本次“探测任务规划”与前期“近距离观测轨迹规划”的仿真实践，我对航天任务规划问题有了更加深入的理解。航天任务规划本质上是一个涉及复杂资源调度与多目标优化的问题，其核心在于如何在有限的时间、设备与资源下，最大化任务收益，并确保任务的可行性。
+
+在建模过程中，我们尝试了两阶段建模策略，但发现效率较低。经过深入分析后，我们发现问题出在约束条件的设置上。具体来说，我们原本将 \texttt{y} 变量的约束条件设置为“大于等于”形式，这使得计算过程的复杂度较高，导致了较大的资源消耗和较长的计算时间。后来，我们将约束条件修改为“等于”形式，显著提高了程序的效率，并减少了不必要的求解阶段。这个调整不仅减少了计算的复杂度，还降低了资源消耗，最终提升了整个优化过程的效率。
+
+以下是我们在两阶段求解方法中的约束条件修改前后的主要变化说明：
+
+3. 判断目标是否为有效观测目标：
+
+原先的约束条件形式为：
+$$
+y_s = 
+\begin{cases}
+1, & \text{if } N_r(s) \geq M_s^{\min} \text{ and } \sum_{r \in R} \sum_{a \in A_{r,s}} x_{r,s,a} \geq N_s^{\min} \\
+0, & \text{otherwise}
+\end{cases}
+$$
+其中：
+\begin{itemize}
+    \item $M_s^{\min}$：目标 $s$ 所需的最小观测测站数；
+    \item $N_s^{\min}$：目标 $s$ 所需的最小有效观测次数。
+\end{itemize}
+
+这个约束条件的原始形式使用了“大于等于”（$\geq$）操作符，导致模型在求解时面临较大的解空间，从而增加了求解的难度和时间。在修改后，我们将“大于等于”条件改为了“等于”条件，即：
+$$
+y_s = 
+\begin{cases}
+1, & \text{if } N_r(s) = M_s^{\min} \text{ and } \sum_{r \in R} \sum_{a \in A_{r,s}} x_{r,s,a} = N_s^{\min} \\
+0, & \text{otherwise}
+\end{cases}
+$$
+
+通过将约束条件调整为“等于”形式，程序的解空间被有效缩小，我们也将原来设置的二阶段求解，直接简化为了一阶段求解，计算效率得到显著提高，且求解过程更加稳定。
 
 \begin{sidewaystable}[h]
     \centering
@@ -392,14 +421,16 @@ $$
     \end{tabular}
 \end{sidewaystable}
 
-\section*{附录: Python 代码}
-\subsection*{A.1 数据模块}
+\newpage
+\section*{A.1 数据模块}
 \lstinputlisting[language=Python,caption={数据模块}]{../data.py}
 
-\subsection*{A.2 数据处理模块}
+\newpage
+\section*{A.2 数据处理模块}
 \lstinputlisting[language=Python,caption={数据处理模块}]{../data_processing_module.py}
 
-\subsection*{A.3 结果展示模块}
+\newpage
+\section*{A.3 结果展示模块}
 \lstinputlisting[language=Python,caption={结果展示模块}]{../result_show_app.py}
 
 \end{document}
