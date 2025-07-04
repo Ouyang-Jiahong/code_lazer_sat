@@ -46,6 +46,9 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple XXX
 ### result_show_app.py
 同样基于 Dash 框架开发，用于以 HTML 形式显示 `main.py` 中计算出的雷达调度结果。支持选择目标和雷达编号，展示对应的调度表格和甘特图。
 
+### plottemp.py
+弧段切割功能的可视化，用于绘制图表。
+
 ## 任务场景描述
 
 本任务旨在利用一组雷达设备对给定的空间目标进行探测任务规划与评估。具体包括：
@@ -70,7 +73,7 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple XXX
 
 ### 运行步骤
 1. 安装所需的 Python 库。
-2. 确保 `simData` 目录下的 `sensorData.xlsx`、`requireData.xlsx`、`usableArcs.mat` 和 `simDate.mat` 文件存在。
-3. 运行 `main.py` 进行任务规划求解。
-4. 运行 `app.py` 查看目标可见弧段时序图。
-5. 运行 `result_show.py` 查看雷达调度结果。
+2. 确保 `simData` 目录下的 `sensorData.xlsx`、`requireData.xlsx`、`usableArcs.mat` 和 `simDate.mat` 等文件存在。
+3. 运行 `data_processing_module.py` 进行任务规划求解。
+4. 也可以运行 `visible_arc_visualization_app.py` 查看目标可见弧段时序图。
+5. 也可以运行 `result_show_app.py` 查看雷达调度结果（若运行这个，则需要重新运行一次`data_processing_module.py`，所以建议直接运行这个程序）。
